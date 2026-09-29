@@ -1,4 +1,3 @@
-cat << 'EOF' > README.md
 # NexusSLA: Multi-Source Truth Oracle & SLA Dispute Court
 
 NexusSLA is an Intelligent Contract on GenLayer that serves as an autonomous SLA arbiter and reliability oracle for APIs, decentralized infrastructure, and AI agents. It connects real-world service uptime data with on-chain financial collateral without relying on centralized oracles.
