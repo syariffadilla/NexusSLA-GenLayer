@@ -137,7 +137,7 @@ export default function CreateSLAPage() {
         P3: parseInt(penalties[2] || "4000", 10),
       };
 
-      setDeployStep("2/3: Broadcasting deployment transaction to GenLayer Studionet...");
+      setDeployStep("1/3: Checking network & preparing transaction...");
 
       const result = await deploySlaContract({
         fromAddress: wallet.address,
@@ -150,6 +150,7 @@ export default function CreateSLAPage() {
         bondAmountWei: bondWei,
         tierUptimeThresholdsBps,
         tierPenaltyBps,
+        onStep: (step) => setDeployStep(step),
       });
 
       setDeployStep("3/3: Finalizing contract deployment and recording state...");

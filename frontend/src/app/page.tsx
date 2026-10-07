@@ -1051,7 +1051,7 @@ export default function LandingPage() {
             <GenLayerLogo size={20} fill="#A855F7" />
             <span className="font-semibold text-white text-sm">NexusSLA</span>
             <span className="text-slate-600">|</span>
-            <span>GenLayer Studionet (Chain 42)</span>
+            <span>GenLayer Studionet (Chain 61999)</span>
           </div>
 
           <div className="flex items-center gap-6">

@@ -268,6 +268,91 @@ export async function resolveProviderForAddress(fromAddress: string): Promise<Ei
   );
 }
 
+/**
+ * Ensures the wallet is connected to GenLayer Studionet (Chain ID 61999 / 0xf22f).
+ * If on another chain, prompts the wallet to switch or register the network.
+ */
+export async function ensureStudionetNetwork(provider: {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+}): Promise<void> {
+  const targetChainId = studionet.id; // 61999
+  const targetChainIdHex = `0x${targetChainId.toString(16)}`; // "0xf22f"
+
+  try {
+    const currentChainId = (await provider.request({ method: "eth_chainId" })) as string;
+    if (typeof currentChainId === "string" && parseInt(currentChainId, 16) === targetChainId) {
+      return;
+    }
+  } catch (err) {
+    console.warn("Could not check current chainId:", err);
+  }
+
+  const rpcUrl =
+    (process.env.NEXT_PUBLIC_GENLAYER_RPC_URL ?? "").trim() ||
+    studionet.rpcUrls.default.http[0] ||
+    "https://studio.genlayer.com/api";
+  const explorerUrl =
+    studionet.blockExplorers?.default?.url || "https://studio.genlayer.com";
+
+  try {
+    await provider.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: targetChainIdHex }],
+    });
+  } catch (switchError: unknown) {
+    const err = switchError as {
+      code?: number;
+      message?: string;
+      data?: { originalError?: { code?: number } };
+    };
+    const code = err?.code ?? err?.data?.originalError?.code;
+    const msg = String(err?.message || "");
+
+    if (code === 4001 || msg.toLowerCase().includes("user rejected")) {
+      throw new Error(
+        `Network switch was rejected in your wallet. Please switch to Genlayer Studio Network (Chain ID ${targetChainId} / ${targetChainIdHex}) to proceed.`,
+      );
+    }
+
+    // Attempt adding network
+    try {
+      await provider.request({
+        method: "wallet_addEthereumChain",
+        params: [
+          {
+            chainId: targetChainIdHex,
+            chainName: "Genlayer Studio Network",
+            nativeCurrency: studionet.nativeCurrency || {
+              name: "GEN Token",
+              symbol: "GEN",
+              decimals: 18,
+            },
+            rpcUrls: [rpcUrl],
+            blockExplorerUrls: [explorerUrl],
+          },
+        ],
+      });
+      // Switch after adding
+      try {
+        await provider.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: targetChainIdHex }],
+        });
+      } catch {
+        // Some wallets auto-switch after addition
+      }
+    } catch (addError: unknown) {
+      const addErr = addError as { code?: number; message?: string };
+      if (addErr?.code === 4001 || String(addErr?.message).toLowerCase().includes("user rejected")) {
+        throw new Error(
+          `Network registration was rejected in your wallet. Please switch to Genlayer Studio Network (Chain ID ${targetChainId}) to proceed.`,
+        );
+      }
+      throw addError;
+    }
+  }
+}
+
 export interface WriteResult {
   hash: string;
   status: string;
@@ -283,6 +368,7 @@ async function callWriteMethod(
 ): Promise<WriteResult> {
   const address = resolveAddress(targetAddress);
   const provider = await resolveProviderForAddress(fromAddress);
+  await ensureStudionetNetwork(provider);
 
   const client = createClient({
     chain: studionet,
@@ -341,6 +427,7 @@ export interface DeploySlaParams {
   bondAmountWei: string;
   tierUptimeThresholdsBps: Record<string, number>;
   tierPenaltyBps: Record<string, number>;
+  onStep?: (step: string) => void;
 }
 
 export interface DeployResult {
@@ -351,6 +438,8 @@ export interface DeployResult {
 
 export async function deploySlaContract(params: DeploySlaParams): Promise<DeployResult> {
   const provider = await resolveProviderForAddress(params.fromAddress);
+  params.onStep?.("1/3: Confirming GenLayer Studionet network in your wallet...");
+  await ensureStudionetNetwork(provider);
 
   const client = createClient({
     chain: studionet,
@@ -371,17 +460,21 @@ export async function deploySlaContract(params: DeploySlaParams): Promise<Deploy
     JSON.stringify(params.tierPenaltyBps),
   ];
 
+  params.onStep?.("1/3: Please confirm transaction in Rabby / MetaMask...");
   const hash = await client.deployContract({
     code: NEXUS_SLA_CONTRACT_CODE,
     args: constructorArgs,
   });
 
+  params.onStep?.(`2/3: Broadcasting transaction (${String(hash).slice(0, 10)}...) to Studionet validators...`);
   const receipt = await client.waitForTransactionReceipt({
     hash: hash as any,
     status: TransactionStatus.ACCEPTED,
     interval: 5000,
     retries: 120,
   });
+
+  params.onStep?.("3/3: Finalizing contract deployment and recording state...");
 
   const deployedAddress =
     (receipt as any).contractAddress ||

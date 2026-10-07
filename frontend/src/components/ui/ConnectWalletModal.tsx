@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useNexus } from "@/context/NexusContext";
-import { CONTRACT_ADDRESS, GENLAYER_EXPLORER_URL } from "@/lib/contract";
+import { CONTRACT_ADDRESS, GENLAYER_EXPLORER_URL, ensureStudionetNetwork } from "@/lib/contract";
 import { truncateAddress } from "@/lib/formatters";
 import {
   X,
@@ -350,36 +350,11 @@ export function ConnectWalletModal({ isOpen, onClose }: ConnectWalletModalProps)
         throw new Error("No accounts authorized in your wallet.");
       }
 
-      // 2. Suggest / switch to GenLayer Studionet (Chain ID 42 / 0x2a)
+      // 2. Suggest / switch to GenLayer Studionet (Chain ID 61999 / 0xf22f)
       try {
-        await provider.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: "0x2a" }],
-        });
+        await ensureStudionetNetwork(provider);
       } catch (switchError: unknown) {
-        const errObj = switchError as { code?: number };
-        if (errObj && errObj.code === 4902) {
-          try {
-            await provider.request({
-              method: "wallet_addEthereumChain",
-              params: [
-                {
-                  chainId: "0x2a",
-                  chainName: "GenLayer Studionet",
-                  nativeCurrency: {
-                    name: "GEN",
-                    symbol: "GEN",
-                    decimals: 18,
-                  },
-                  rpcUrls: ["https://studio.genlayer.com/rpc"],
-                  blockExplorerUrls: ["https://studio.genlayer.com"],
-                },
-              ],
-            });
-          } catch {
-            // Ignore if user dismisses chain addition
-          }
-        }
+        console.warn("Could not switch to Studionet automatically during connect:", switchError);
       }
 
       // 3. Complete connection in context

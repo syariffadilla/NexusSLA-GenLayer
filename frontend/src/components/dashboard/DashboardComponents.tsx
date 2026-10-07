@@ -212,7 +212,7 @@ export function DashboardPortal() {
               <span className="w-1.5 h-1.5 rounded-full bg-purple-600 animate-pulse" />
               GenLayer Studionet
             </span>
-            <span className="text-xs text-slate-400 font-mono">Chain 42</span>
+            <span className="text-xs text-slate-400 font-mono">Chain 61999</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900 leading-tight">
             SLA Court &amp; Submissions
