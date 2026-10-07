@@ -64,7 +64,7 @@ export default function DepositBondPage() {
   const isAlreadyActive =
     contractState?.state === "ACTIVE" &&
     contractState?.remaining_bond &&
-    BigInt(contractState.remaining_bond) > 0n;
+    BigInt(contractState.remaining_bond) > BigInt(0);
 
   const handleDeposit = async () => {
     setErrorMsg(null);
