@@ -9,31 +9,23 @@ import { Check, Copy } from "lucide-react";
 export function GenLayerLogo({
   size = 28,
   className = "",
-  fill = "#0F172A",
 }: {
   size?: number;
   className?: string;
   fill?: string;
 }) {
   return (
-    <svg
+    <img
+      src="/logo.png"
+      alt="NexusSLA"
       width={size}
       height={size}
-      viewBox="0 0 200 200"
-      fill={fill}
-      xmlns="http://www.w3.org/2000/svg"
-      className={className}
-    >
-      <path d="M 99,95 L 92,109 L 92,111 L 86,122 L 86,124 L 98,130 L 101,130 L 113,124 L 113,122 Z" />
-      <path d="M 107,28 L 107,77 L 132,128 L 130,132 L 109,142 L 174,167 Z" />
-      <path d="M 92,28 L 25,167 L 90,142 L 69,132 L 67,128 L 92,77 Z" />
-    </svg>
+      className={`rounded-md object-contain shrink-0 ${className}`}
+      style={{ width: `${size}px`, height: `${size}px` }}
+    />
   );
 }
 
-/**
- * Legacy compatibility alias for NexusLogo
- */
 export const NexusLogo = GenLayerLogo;
 
 /**
