@@ -383,12 +383,25 @@ async function callWriteMethod(
     status: TransactionStatus.ACCEPTED,
     interval: 5000,
     retries: 120,
+    fullTransaction: true,
   });
 
-  const executionResult = String(receipt.txExecutionResultName ?? "UNKNOWN");
-  const status = String(receipt.statusName ?? receipt.status ?? "UNKNOWN");
-  if (executionResult === "FINISHED_WITH_ERROR") {
-    throw new Error(`Transaction ${hash} was accepted but the contract call reverted (FINISHED_WITH_ERROR).`);
+  const rawTx = receipt as any;
+  const executionResult = String(rawTx.txExecutionResultName ?? rawTx.txExecutionResult ?? "UNKNOWN");
+  const status = String(rawTx.statusName ?? rawTx.status ?? "UNKNOWN");
+
+  if (
+    executionResult === "FINISHED_WITH_ERROR" ||
+    executionResult === "2" ||
+    rawTx.resultName === "DISAGREE" ||
+    rawTx.resultName === "MAJORITY_DISAGREE" ||
+    rawTx.consensus_data?.leader_receipt?.[0]?.execution_result === 2
+  ) {
+    const errorDetail =
+      rawTx.consensus_data?.leader_receipt?.[0]?.genvm_result?.error ||
+      rawTx.consensus_data?.leader_receipt?.[0]?.error ||
+      "Contract execution reverted on-chain.";
+    throw new Error(`Transaction ${hash} reverted: ${errorDetail}`);
   }
   return { hash: String(hash), status, executionResult };
 }

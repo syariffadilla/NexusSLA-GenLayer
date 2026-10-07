@@ -4,6 +4,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useNexus } from "@/context/NexusContext";
 import { fileClaim } from "@/lib/contract";
+import { truncateAddress, formatBond } from "@/lib/formatters";
 import {
   ArrowLeft,
   Plus,
@@ -16,6 +17,8 @@ import {
   Cpu,
   Scale,
   Sparkles,
+  AlertCircle,
+  Coins,
 } from "lucide-react";
 
 const ADJUDICATION_STEPS = [
@@ -27,12 +30,26 @@ const ADJUDICATION_STEPS = [
 ];
 
 export default function FileClaimPage() {
-  const { contractState, contractConfig, wallet, refreshState } = useNexus();
+  const { contractState, contractConfig, wallet, refreshState, activeContractAddress, userRole } = useNexus();
   const [urls, setUrls] = useState<string[]>([""]);
   const [submitting, setSubmitting] = useState(false);
   const [activeStep, setActiveStep] = useState(0);
   const [submitted, setSubmitted] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const isClient =
+    wallet.connected &&
+    wallet.address &&
+    contractState?.client &&
+    wallet.address.toLowerCase() === contractState.client.toLowerCase();
+
+  const isProvider =
+    wallet.connected &&
+    wallet.address &&
+    contractState?.provider &&
+    wallet.address.toLowerCase() === contractState.provider.toLowerCase();
+
+  const isContractActive = contractState?.state === "ACTIVE";
 
   // Domain whitelist comes directly from live contract get_config()
   const registeredDomains = useMemo(() => {
@@ -94,30 +111,49 @@ export default function FileClaimPage() {
 
   const handleSubmit = async () => {
     if (!allValid) return;
+
+    if (!wallet.connected || !wallet.address) {
+      setErrorMsg("Wallet not connected. Please connect your Web3 wallet first.");
+      return;
+    }
+
+    if (isProvider) {
+      setErrorMsg(
+        `Role Restriction: You are currently connected as the Provider (${truncateAddress(contractState?.provider)}). Under the bilateral SLA agreement, claims can ONLY be filed by the designated Client (${truncateAddress(contractState?.client)}). Please switch accounts in Rabby / MetaMask.`,
+      );
+      return;
+    }
+
+    if (contractState?.client && !isClient) {
+      setErrorMsg(
+        `Unauthorized: Only the designated Client (${truncateAddress(contractState.client)}) can file outage claims against this SLA. Your current wallet is ${truncateAddress(wallet.address)}.`,
+      );
+      return;
+    }
+
+    if (!isContractActive) {
+      setErrorMsg(
+        `Agreement is not ACTIVE (current status: ${contractState?.state || "UNINITIALIZED"}). The Provider must deposit the collateral bond before any downtime claims can be evaluated by the court.`,
+      );
+      return;
+    }
+
     setSubmitting(true);
     setActiveStep(1);
     setErrorMsg(null);
 
     try {
-      // Step-by-step adjudication progression
-      await new Promise((r) => setTimeout(r, 700));
       setActiveStep(2);
+      await fileClaim(wallet.address, urls.filter(Boolean), activeContractAddress);
 
-      await new Promise((r) => setTimeout(r, 900));
       setActiveStep(3);
-
-      if (!wallet.connected || !wallet.address) {
-        throw new Error("Wallet not connected. Connect client wallet first.");
-      }
-      await fileClaim(wallet.address, urls.filter(Boolean));
+      await new Promise((r) => setTimeout(r, 600));
 
       setActiveStep(4);
-      await new Promise((r) => setTimeout(r, 800));
+      await new Promise((r) => setTimeout(r, 600));
 
       setActiveStep(5);
-      await new Promise((r) => setTimeout(r, 700));
-
-      await refreshState();
+      await refreshState(activeContractAddress);
       setSubmitted(true);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Failed to adjudicate claim");
@@ -304,6 +340,44 @@ export default function FileClaimPage() {
           </div>
         </div>
 
+        {/* Role & Contract State Warnings */}
+        {isProvider && (
+          <div className="mb-6 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs shadow-xs">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold block mb-0.5">
+                  Connected as Provider ({truncateAddress(wallet.address)})
+                </span>
+                <span>
+                  Under this bilateral agreement, outage claims can <strong>ONLY</strong> be filed by the designated Client (
+                  <span className="font-mono font-bold text-amber-950">{truncateAddress(contractState?.client)}</span>
+                  ). Please switch to your Client wallet account in Rabby / MetaMask to proceed.
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!isContractActive && (
+          <div className="mb-6 p-4 rounded-xl bg-purple-50 border border-purple-200 text-purple-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle size={16} className="text-purple-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold block mb-0.5">
+                  Agreement Not Active ({contractState?.state || "UNINITIALIZED"})
+                </span>
+                <span>
+                  The designated Provider must deposit collateral bond ({contractConfig ? formatBond(contractConfig.bond_amount) : "2.00 GEN"}) before any outage claims can be filed.
+                </span>
+              </div>
+            </div>
+            <Link href="/sla/deposit" className="btn-portal-primary text-xs py-1.5 px-3 whitespace-nowrap self-start sm:self-auto no-underline">
+              Deposit Bond First
+            </Link>
+          </div>
+        )}
+
         {/* Evidence sources */}
         <div className="glass-card p-6 mb-6 animate-fade-in-up">
           <h3 className="text-sm font-semibold tracking-widest uppercase mb-5" style={{ color: "var(--text-muted)" }}>
@@ -394,14 +468,27 @@ export default function FileClaimPage() {
           className="btn-primary w-full justify-center"
           style={{
             padding: "14px 24px",
-            opacity: allValid ? 1 : 0.5,
-            cursor: allValid ? "pointer" : "not-allowed",
+            opacity: allValid && !isProvider && isContractActive ? 1 : 0.5,
+            cursor: allValid && !isProvider && isContractActive ? "pointer" : "not-allowed",
           }}
-          disabled={!allValid || submitting}
+          disabled={!allValid || submitting || isProvider || !isContractActive}
           onClick={handleSubmit}
         >
-          <Send size={16} />
-          Submit Claim for Adjudication
+          {isProvider ? (
+            <span>Switch to Client Wallet to File Claim</span>
+          ) : !isContractActive ? (
+            <span>Agreement Must Be Active to File Claim</span>
+          ) : submitting ? (
+            <span className="inline-flex items-center gap-2">
+              <Loader2 size={16} className="animate-spin" />
+              <span>Adjudicating with AI Jury...</span>
+            </span>
+          ) : (
+            <>
+              <Send size={16} />
+              Submit Claim for Adjudication
+            </>
+          )}
         </button>
       </div>
     </div>
