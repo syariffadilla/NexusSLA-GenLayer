@@ -17,19 +17,20 @@ import { studionet } from "genlayer-js/chains";
 import { TransactionStatus } from "genlayer-js/types";
 import type { ContractConfig, ContractGetState } from "@/types/nexus-sla";
 
-const RAW_CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS ?? "").trim();
+export const DEPLOYED_CONTRACT_ADDRESS = "0x96E70825E4F4b3dB44E018Dd7e99433dBF458FFb";
+
+const RAW_CONTRACT_ADDRESS = (
+  process.env.NEXT_PUBLIC_CONTRACT_ADDRESS ||
+  DEPLOYED_CONTRACT_ADDRESS
+).trim();
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 
-/** Configured contract address, or "" when NEXT_PUBLIC_CONTRACT_ADDRESS is missing/invalid. */
+/** Configured contract address, defaulting to verified deployed instance 0x96E70825E4F4b3dB44E018Dd7e99433dBF458FFb */
 export const CONTRACT_ADDRESS: string = ADDRESS_RE.test(RAW_CONTRACT_ADDRESS)
   ? RAW_CONTRACT_ADDRESS
-  : "";
+  : DEPLOYED_CONTRACT_ADDRESS;
 
-export const CONTRACT_CONFIG_ERROR: string | null = CONTRACT_ADDRESS
-  ? null
-  : RAW_CONTRACT_ADDRESS
-  ? `NEXT_PUBLIC_CONTRACT_ADDRESS is not a valid address: "${RAW_CONTRACT_ADDRESS}"`
-  : "NEXT_PUBLIC_CONTRACT_ADDRESS is not set. Add it to frontend/.env.local and restart the dev server.";
+export const CONTRACT_CONFIG_ERROR: string | null = null;
 
 export const GENLAYER_EXPLORER_URL = "https://explorer-studio.genlayer.com";
 
