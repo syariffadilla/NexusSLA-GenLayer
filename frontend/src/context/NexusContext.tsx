@@ -15,18 +15,15 @@ import type {
   WalletState,
 } from "@/types/nexus-sla";
 import {
-  CONTRACT_CONFIG_ERROR,
+  CONTRACT_ADDRESS,
+  DEFAULT_CONTRACT_ADDRESS,
   GENLAYER_RPC_URL,
   getContractConfig,
   getContractState,
+  setActiveContractAddressInMemory,
   setCustomRpcUrl,
   testRpcConnection,
 } from "@/lib/contract";
-
-// NOTE: There is intentionally NO demo / mock mode. Every value exposed by this
-// context is either the parsed result of a live readContract() call against
-// NEXT_PUBLIC_CONTRACT_ADDRESS, or null (UI must render a skeleton / "Not
-// available"). On RPC failure we clear state rather than fall back to fixtures.
 
 export type UserRole = "Provider" | "Client" | "Auditor" | "Unknown" | "Disconnected";
 
@@ -37,12 +34,38 @@ export interface RpcStatusInfo {
   url: string;
 }
 
+export interface AgreementItem {
+  address: string;
+  title: string;
+  provider?: string;
+  client?: string;
+  createdAt?: number;
+}
+
+const DEFAULT_KNOWN_CONTRACTS: AgreementItem[] = [
+  {
+    address: DEFAULT_CONTRACT_ADDRESS,
+    title: "Benchmark SLA (Studio)",
+    provider: "0xb70e5df6db91a26b6fece7a3c3069151eef3ea47",
+    client: "0xb70e5df6db91a26b6fece7a3c3069151eef3ea48",
+  },
+];
+
+const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+
 interface NexusContextType {
   // Wallet
   wallet: WalletState;
   connectWallet: (specificProvider?: unknown) => Promise<void>;
   disconnectWallet: () => void;
   userRole: UserRole;
+
+  // Multi-Agreement Hub
+  activeContractAddress: string;
+  setActiveContractAddress: (addr: string) => void;
+  knownContracts: AgreementItem[];
+  addKnownContract: (item: AgreementItem) => void;
+  removeKnownContract: (addr: string) => void;
 
   // Contract state — get_state()
   contractState: ContractGetState | null;
@@ -58,7 +81,7 @@ interface NexusContextType {
   refreshing: boolean;
   error: string | null;
   lastFetchedAt: number | null;
-  refreshState: () => Promise<void>;
+  refreshState: (targetAddr?: string) => Promise<void>;
 
   // RPC
   rpcUrl: string;
@@ -88,6 +111,45 @@ export function NexusProvider({ children }: { children: ReactNode }) {
     connecting: false,
   });
 
+  // Active Contract State
+  const [activeContractAddress, setActiveContractAddressState] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      const urlContract = new URLSearchParams(window.location.search).get("contract");
+      if (urlContract && ADDRESS_RE.test(urlContract)) {
+        setActiveContractAddressInMemory(urlContract);
+        return urlContract;
+      }
+      const stored = localStorage.getItem("nexussla_active_contract");
+      if (stored && ADDRESS_RE.test(stored)) {
+        setActiveContractAddressInMemory(stored);
+        return stored;
+      }
+    }
+    setActiveContractAddressInMemory(CONTRACT_ADDRESS);
+    return CONTRACT_ADDRESS;
+  });
+
+  const [knownContracts, setKnownContracts] = useState<AgreementItem[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("nexussla_known_contracts");
+        if (stored) {
+          const parsed = JSON.parse(stored) as AgreementItem[];
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            // Ensure default contract is always included
+            const hasDefault = parsed.some(
+              (c) => c.address.toLowerCase() === DEFAULT_CONTRACT_ADDRESS.toLowerCase()
+            );
+            return hasDefault ? parsed : [...DEFAULT_KNOWN_CONTRACTS, ...parsed];
+          }
+        }
+      } catch {
+        // Ignore JSON error
+      }
+    }
+    return DEFAULT_KNOWN_CONTRACTS;
+  });
+
   const [contractState, setContractState] = useState<ContractGetState | null>(null);
   const [stateRaw, setStateRaw] = useState<string | null>(null);
   const [contractConfig, setContractConfig] = useState<ContractConfig | null>(null);
@@ -95,11 +157,55 @@ export function NexusProvider({ children }: { children: ReactNode }) {
   const [configError, setConfigError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(CONTRACT_CONFIG_ERROR);
+  const [error, setError] = useState<string | null>(null);
   const [lastFetchedAt, setLastFetchedAt] = useState<number | null>(null);
   const [rpcUrl, setRpcUrlState] = useState(GENLAYER_RPC_URL);
   const [rpcStatus, setRpcStatus] = useState<RpcStatusInfo | null>(null);
   const [txState, setTxState] = useState<TransactionState | null>(null);
+
+  // Switch Active Contract
+  const setActiveContractAddress = useCallback((addr: string) => {
+    const trimmed = (addr || "").trim();
+    if (!ADDRESS_RE.test(trimmed)) return;
+    setActiveContractAddressState(trimmed);
+    setActiveContractAddressInMemory(trimmed);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("nexussla_active_contract", trimmed);
+      // Cleanly sync URL query without full page reload
+      const url = new URL(window.location.href);
+      url.searchParams.set("contract", trimmed);
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, []);
+
+  // Add Known Contract
+  const addKnownContract = useCallback((item: AgreementItem) => {
+    if (!ADDRESS_RE.test(item.address)) return;
+    setKnownContracts((prev) => {
+      const filtered = prev.filter(
+        (c) => c.address.toLowerCase() !== item.address.toLowerCase()
+      );
+      const updated = [item, ...filtered];
+      if (typeof window !== "undefined") {
+        localStorage.setItem("nexussla_known_contracts", JSON.stringify(updated));
+      }
+      return updated;
+    });
+    setActiveContractAddress(item.address);
+  }, [setActiveContractAddress]);
+
+  // Remove Known Contract
+  const removeKnownContract = useCallback((addr: string) => {
+    setKnownContracts((prev) => {
+      const updated = prev.filter(
+        (c) => c.address.toLowerCase() !== addr.toLowerCase()
+      );
+      if (typeof window !== "undefined") {
+        localStorage.setItem("nexussla_known_contracts", JSON.stringify(updated));
+      }
+      return updated;
+    });
+  }, []);
 
   // Detect active browser wallet accounts on mount and on accountsChanged
   useEffect(() => {
@@ -162,19 +268,21 @@ export function NexusProvider({ children }: { children: ReactNode }) {
     [rpcUrl],
   );
 
-  // Fetch get_state() and get_config() from the live contract.
-  const refreshState = useCallback(async () => {
-    if (CONTRACT_CONFIG_ERROR) {
-      setError(CONTRACT_CONFIG_ERROR);
+  // Fetch get_state() and get_config() from the active contract.
+  const refreshState = useCallback(async (targetAddr?: string) => {
+    const effectiveAddr = (targetAddr || activeContractAddress || CONTRACT_ADDRESS).trim();
+    if (!ADDRESS_RE.test(effectiveAddr)) {
+      setError(`Invalid contract address: "${effectiveAddr}"`);
       setLoading(false);
       return;
     }
+
     setRefreshing(true);
     const started = Date.now();
 
     const [stateRes, configRes] = await Promise.allSettled([
-      getContractState(),
-      getContractConfig(),
+      getContractState(effectiveAddr),
+      getContractConfig(effectiveAddr),
     ]);
 
     if (stateRes.status === "fulfilled") {
@@ -186,7 +294,7 @@ export function NexusProvider({ children }: { children: ReactNode }) {
     } else {
       const msg =
         stateRes.reason instanceof Error ? stateRes.reason.message : "Failed to read get_state()";
-      // Do NOT keep stale data or substitute fixtures — clear it.
+      // Clear data to prevent rendering stale information
       setContractState(null);
       setStateRaw(null);
       setError(`get_state() failed via ${rpcUrl}: ${msg}`);
@@ -209,13 +317,14 @@ export function NexusProvider({ children }: { children: ReactNode }) {
 
     setRefreshing(false);
     setLoading(false);
-  }, [rpcUrl]);
+  }, [activeContractAddress, rpcUrl]);
 
+  // Refresh whenever activeContractAddress or rpcUrl changes
   useEffect(() => {
-    refreshState();
-    const id = setInterval(refreshState, POLL_INTERVAL_MS);
+    refreshState(activeContractAddress);
+    const id = setInterval(() => refreshState(activeContractAddress), POLL_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [refreshState]);
+  }, [activeContractAddress, refreshState]);
 
   // Connect a real injected browser wallet (MetaMask / Rabby / OKX / Phantom, etc.).
   const connectWallet = useCallback(async (specificProvider?: unknown) => {
@@ -251,6 +360,7 @@ export function NexusProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Automated Role Detection based purely on connected wallet vs contract parties
   const userRole: UserRole = (() => {
     if (!wallet.connected || !wallet.address) return "Disconnected";
     if (!contractState) return "Unknown";
@@ -267,6 +377,11 @@ export function NexusProvider({ children }: { children: ReactNode }) {
         connectWallet,
         disconnectWallet,
         userRole,
+        activeContractAddress,
+        setActiveContractAddress,
+        knownContracts,
+        addKnownContract,
+        removeKnownContract,
         contractState,
         stateRaw,
         contractConfig,

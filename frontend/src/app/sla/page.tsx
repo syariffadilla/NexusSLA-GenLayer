@@ -18,7 +18,15 @@ import {
 } from "lucide-react";
 
 export default function SLAPage() {
-  const { contractState, loading, wallet, refreshState } = useNexus();
+  const {
+    contractState,
+    loading,
+    wallet,
+    refreshState,
+    activeContractAddress,
+    knownContracts,
+    setActiveContractAddress,
+  } = useNexus();
 
   const [depositOpen, setDepositOpen] = useState(false);
   const [depositAmount, setDepositAmount] = useState("1.00");
@@ -38,8 +46,8 @@ export default function SLAPage() {
       const num = parseFloat(depositAmount);
       if (isNaN(num) || num <= 0) throw new Error("Please enter a valid deposit amount");
       const wei = (BigInt(Math.round(num * 1e9)) * BigInt(1e9)).toString();
-      await depositBond(wallet.address, wei);
-      await refreshState();
+      await depositBond(wallet.address, wei, activeContractAddress);
+      await refreshState(activeContractAddress);
       setActionSuccess(`Successfully deposited ${depositAmount} GEN bond.`);
       setDepositOpen(false);
     } catch (err) {
@@ -59,8 +67,8 @@ export default function SLAPage() {
       if (!wallet.connected || !wallet.address) {
         throw new Error("Wallet not connected. Connect provider wallet first.");
       }
-      await withdrawRemainingBond(wallet.address);
-      await refreshState();
+      await withdrawRemainingBond(wallet.address, activeContractAddress);
+      await refreshState(activeContractAddress);
       setActionSuccess("Remaining bond withdrawn to provider wallet.");
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Withdrawal failed");
@@ -141,10 +149,10 @@ export default function SLAPage() {
                 </div>
                 <div>
                   <h3 className="text-base sm:text-lg font-bold text-slate-900">
-                    API Reliability Agreement
+                    {knownContracts.find((c) => c.address.toLowerCase() === activeContractAddress.toLowerCase())?.title || "API Reliability Agreement"}
                   </h3>
-                  <div className="mono text-xs text-slate-400 mt-0.5">
-                    {CONTRACT_ADDRESS}
+                  <div className="mono text-xs text-slate-400 mt-0.5 break-all">
+                    {activeContractAddress}
                   </div>
                 </div>
               </div>
@@ -184,10 +192,15 @@ export default function SLAPage() {
 
             <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100">
               <div className="flex items-center gap-3">
-                <Link href="/explorer" className="text-purple-600 hover:text-purple-800 text-xs font-semibold no-underline inline-flex items-center gap-1.5">
+                <a
+                  href={`https://explorer-studio.genlayer.com/contracts/${activeContractAddress}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-purple-600 hover:text-purple-800 text-xs font-semibold no-underline inline-flex items-center gap-1.5"
+                >
                   <ExternalLink size={12} />
                   View on Explorer
-                </Link>
+                </a>
                 <Link href="/claims/new" className="text-slate-600 hover:text-slate-900 text-xs font-semibold no-underline inline-flex items-center gap-1.5">
                   File Claim
                 </Link>
@@ -213,6 +226,51 @@ export default function SLAPage() {
               </div>
             </div>
           </div>
+
+          {/* All Available Agreements Grid */}
+          {knownContracts.length > 1 && (
+            <div className="pt-4 border-t border-slate-200">
+              <h2 className="text-base font-bold text-slate-800 mb-3">
+                All Available Agreements ({knownContracts.length})
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {knownContracts.map((c) => {
+                  const isCurrent = c.address.toLowerCase() === activeContractAddress.toLowerCase();
+                  return (
+                    <div
+                      key={c.address}
+                      className={`p-4 rounded-xl border transition-all ${
+                        isCurrent
+                          ? "bg-purple-50/60 border-purple-300 shadow-sm"
+                          : "bg-white border-slate-200 hover:border-slate-300"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="font-bold text-xs text-slate-900 truncate">
+                          {c.title}
+                        </span>
+                        {isCurrent ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-bold">
+                            Active
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => setActiveContractAddress(c.address)}
+                            className="text-[11px] text-purple-600 hover:text-purple-700 font-semibold border-none bg-transparent cursor-pointer"
+                          >
+                            Switch to this →
+                          </button>
+                        )}
+                      </div>
+                      <div className="mono text-[11px] text-slate-500 truncate">
+                        {c.address}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

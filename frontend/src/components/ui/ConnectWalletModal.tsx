@@ -182,14 +182,45 @@ const WALLET_LIST: WalletItem[] = [
   },
 ];
 
+interface EIP6963ProviderDetail {
+  info: {
+    uuid: string;
+    name: string;
+    icon: string;
+    rdns: string;
+  };
+  provider: unknown;
+}
+
 export function ConnectWalletModal({ isOpen, onClose }: ConnectWalletModalProps) {
   const { connectWallet } = useNexus();
   const [mounted, setMounted] = useState(false);
   const [connectingId, setConnectingId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [eip6963List, setEip6963List] = useState<EIP6963ProviderDetail[]>([]);
 
   useEffect(() => {
     setMounted(true);
+
+    function onAnnounce(event: Event) {
+      const customEvent = event as CustomEvent<EIP6963ProviderDetail>;
+      if (!customEvent.detail) return;
+      setEip6963List((prev) => {
+        if (prev.some((p) => p.info.uuid === customEvent.detail.info.uuid)) return prev;
+        return [...prev, customEvent.detail];
+      });
+    }
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("eip6963:announceProvider", onAnnounce);
+      window.dispatchEvent(new Event("eip6963:requestProvider"));
+    }
+
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("eip6963:announceProvider", onAnnounce);
+      }
+    };
   }, []);
 
   // Detect which wallet extensions are active in the browser
@@ -231,35 +262,55 @@ export function ConnectWalletModal({ isOpen, onClose }: ConnectWalletModalProps)
     const eth = win.ethereum;
     const providers = Array.isArray(eth?.providers) ? eth.providers : eth ? [eth] : [];
 
+    const findEip = (keyword: string) =>
+      eip6963List.find(
+        (p) =>
+          p.info.rdns?.toLowerCase().includes(keyword) ||
+          p.info.name?.toLowerCase().includes(keyword)
+      )?.provider;
+
+    // Rabby
     const rabbyProvider =
+      findEip("rabby") ||
       win.rabby ||
       providers.find((p) => p.isRabby) ||
       (eth?.isRabby ? eth : null);
 
+    // MetaMask: detected via EIP-6963, explicit MetaMask provider, or window.ethereum
+    const metamaskProvider =
+      findEip("metamask") ||
+      providers.find((p) => p.isMetaMask && !p.isRabby) ||
+      providers.find((p) => p.isMetaMask) ||
+      (eth?.isMetaMask ? eth : null);
+
+    // OKX
     const okxProvider =
+      findEip("okx") ||
+      findEip("okex") ||
       win.okxwallet ||
       providers.find((p) => p.isOkxWallet) ||
       (eth?.isOkxWallet ? eth : null);
 
+    // Phantom
     const phantomProvider =
+      findEip("phantom") ||
       win.phantom?.ethereum ||
       providers.find((p) => p.isPhantom) ||
       (eth?.isPhantom ? eth : null);
 
+    // Trust
     const trustProvider =
+      findEip("trust") ||
       win.trustwallet ||
       providers.find((p) => p.isTrust || p.isTrustWallet) ||
       (eth?.isTrust || eth?.isTrustWallet ? eth : null);
 
+    // Coinbase
     const coinbaseProvider =
+      findEip("coinbase") ||
       win.coinbaseWalletExtension ||
       providers.find((p) => p.isCoinbaseWallet) ||
       (eth?.isCoinbaseWallet ? eth : null);
-
-    const metamaskProvider =
-      providers.find((p) => p.isMetaMask && !p.isRabby && !p.isBraveWallet) ||
-      (eth?.isMetaMask && !eth?.isRabby ? eth : null) ||
-      (!rabbyProvider && !okxProvider && !phantomProvider && eth ? eth : null);
 
     return {
       metamask: { detected: Boolean(metamaskProvider), provider: metamaskProvider },
@@ -269,7 +320,7 @@ export function ConnectWalletModal({ isOpen, onClose }: ConnectWalletModalProps)
       trust: { detected: Boolean(trustProvider), provider: trustProvider },
       coinbase: { detected: Boolean(coinbaseProvider), provider: coinbaseProvider },
     };
-  }, [mounted, isOpen]);
+  }, [mounted, isOpen, eip6963List]);
 
   if (!isOpen || !mounted) return null;
 

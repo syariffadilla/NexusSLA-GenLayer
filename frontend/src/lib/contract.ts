@@ -16,8 +16,10 @@ import { createClient } from "genlayer-js";
 import { studionet } from "genlayer-js/chains";
 import { TransactionStatus } from "genlayer-js/types";
 import type { ContractConfig, ContractGetState } from "@/types/nexus-sla";
+import { NEXUS_SLA_CONTRACT_CODE } from "./contract-code";
 
 export const DEPLOYED_CONTRACT_ADDRESS = "0x96E70825E4F4b3dB44E018Dd7e99433dBF458FFb";
+export const DEFAULT_CONTRACT_ADDRESS = DEPLOYED_CONTRACT_ADDRESS;
 
 const RAW_CONTRACT_ADDRESS = (
   process.env.NEXT_PUBLIC_CONTRACT_ADDRESS ||
@@ -25,7 +27,7 @@ const RAW_CONTRACT_ADDRESS = (
 ).trim();
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 
-/** Configured contract address, defaulting to verified deployed instance 0x96E70825E4F4b3dB44E018Dd7e99433dBF458FFb */
+/** Configured fallback contract address, defaulting to verified deployed instance 0x96E70825E4F4b3dB44E018Dd7e99433dBF458FFb */
 export const CONTRACT_ADDRESS: string = ADDRESS_RE.test(RAW_CONTRACT_ADDRESS)
   ? RAW_CONTRACT_ADDRESS
   : DEPLOYED_CONTRACT_ADDRESS;
@@ -57,18 +59,35 @@ export function setCustomRpcUrl(url: string) {
   }
 }
 
-function requireAddress(): `0x${string}` {
-  if (!CONTRACT_ADDRESS) throw new Error(CONTRACT_CONFIG_ERROR ?? "Contract address not configured");
-  return CONTRACT_ADDRESS as `0x${string}`;
+// In-memory active contract address
+export let activeContractAddress: string = CONTRACT_ADDRESS;
+
+export function setActiveContractAddressInMemory(addr: string) {
+  const trimmed = (addr || "").trim();
+  if (ADDRESS_RE.test(trimmed)) {
+    activeContractAddress = trimmed;
+  }
+}
+
+export function getActiveContractAddress(): string {
+  return activeContractAddress || CONTRACT_ADDRESS;
+}
+
+function resolveAddress(customAddress?: string): `0x${string}` {
+  const target = (customAddress || activeContractAddress || CONTRACT_ADDRESS).trim();
+  if (!ADDRESS_RE.test(target)) {
+    throw new Error(CONTRACT_CONFIG_ERROR ?? `Invalid contract address: "${target}"`);
+  }
+  return target as `0x${string}`;
 }
 
 function readClient(endpoint = GENLAYER_RPC_URL) {
   return createClient({ chain: studionet, endpoint });
 }
 
-async function readView(functionName: string, endpoint?: string): Promise<string> {
+async function readView(functionName: string, endpoint?: string, targetAddress?: string): Promise<string> {
   const raw = await readClient(endpoint).readContract({
-    address: requireAddress(),
+    address: resolveAddress(targetAddress),
     functionName,
     args: [],
   });
@@ -93,13 +112,13 @@ export interface ContractRead<T> {
 
 // --- Contract Read Methods ---------------------------------------------------
 
-export async function getContractState(): Promise<ContractRead<ContractGetState>> {
-  const raw = await readView("get_state");
+export async function getContractState(targetAddress?: string): Promise<ContractRead<ContractGetState>> {
+  const raw = await readView("get_state", undefined, targetAddress);
   return { data: parsePreservingWei<ContractGetState>(raw), raw, fetchedAt: Date.now() };
 }
 
-export async function getContractConfig(): Promise<ContractRead<ContractConfig>> {
-  const raw = await readView("get_config");
+export async function getContractConfig(targetAddress?: string): Promise<ContractRead<ContractConfig>> {
+  const raw = await readView("get_config", undefined, targetAddress);
   return { data: parsePreservingWei<ContractConfig>(raw), raw, fetchedAt: Date.now() };
 }
 
@@ -150,8 +169,9 @@ async function callWriteMethod(
   functionName: string,
   args: string[] = [],
   value: bigint = BigInt(0),
+  targetAddress?: string,
 ): Promise<WriteResult> {
-  const address = requireAddress();
+  const address = resolveAddress(targetAddress);
   const provider = getInjectedProvider();
   if (!provider) {
     throw new Error(
@@ -189,22 +209,121 @@ async function callWriteMethod(
 }
 
 /** bondAmountWei must be the exact get_config().bond_amount (contract asserts equality). */
-export async function depositBond(fromAddress: string, bondAmountWei: string): Promise<WriteResult> {
-  return callWriteMethod(fromAddress, "deposit_bond", [], BigInt(bondAmountWei));
+export async function depositBond(fromAddress: string, bondAmountWei: string, contractAddress?: string): Promise<WriteResult> {
+  return callWriteMethod(fromAddress, "deposit_bond", [], BigInt(bondAmountWei), contractAddress);
 }
 
-export async function fileClaim(fromAddress: string, evidenceUrls: string[]): Promise<WriteResult> {
-  return callWriteMethod(fromAddress, "file_claim", [JSON.stringify(evidenceUrls)]);
+export async function fileClaim(fromAddress: string, evidenceUrls: string[], contractAddress?: string): Promise<WriteResult> {
+  return callWriteMethod(fromAddress, "file_claim", [JSON.stringify(evidenceUrls)], BigInt(0), contractAddress);
 }
 
-export async function disputeClaim(fromAddress: string, evidenceUrls: string[]): Promise<WriteResult> {
-  return callWriteMethod(fromAddress, "dispute_claim", [JSON.stringify(evidenceUrls)]);
+export async function disputeClaim(fromAddress: string, evidenceUrls: string[], contractAddress?: string): Promise<WriteResult> {
+  return callWriteMethod(fromAddress, "dispute_claim", [JSON.stringify(evidenceUrls)], BigInt(0), contractAddress);
 }
 
-export async function finalizeClaim(fromAddress: string): Promise<WriteResult> {
-  return callWriteMethod(fromAddress, "finalize_claim");
+export async function finalizeClaim(fromAddress: string, contractAddress?: string): Promise<WriteResult> {
+  return callWriteMethod(fromAddress, "finalize_claim", [], BigInt(0), contractAddress);
 }
 
-export async function withdrawRemainingBond(fromAddress: string): Promise<WriteResult> {
-  return callWriteMethod(fromAddress, "withdraw_remaining_bond");
+export async function withdrawRemainingBond(fromAddress: string, contractAddress?: string): Promise<WriteResult> {
+  return callWriteMethod(fromAddress, "withdraw_remaining_bond", [], BigInt(0), contractAddress);
+}
+
+// --- Contract Deploy Method --------------------------------------------------
+
+export interface DeploySlaParams {
+  fromAddress: string;
+  provider: string;
+  client: string;
+  evidenceDomains: string[];
+  quorumRequired: number;
+  start: number;
+  end: number;
+  bondAmountWei: string;
+  tierUptimeThresholdsBps: Record<string, number>;
+  tierPenaltyBps: Record<string, number>;
+}
+
+export interface DeployResult {
+  contractAddress: string;
+  hash: string;
+  status: string;
+}
+
+export async function deploySlaContract(params: DeploySlaParams): Promise<DeployResult> {
+  const provider = getInjectedProvider();
+  if (!provider) {
+    throw new Error(
+      "No browser wallet detected. Deployment requires a connected Web3 wallet (MetaMask / Rabby).",
+    );
+  }
+  const accounts = ((await provider.request({ method: "eth_accounts" })) as string[]) || [];
+  if (!accounts.some((a) => a.toLowerCase() === params.fromAddress.toLowerCase())) {
+    throw new Error(
+      `Session address ${params.fromAddress} is not unlocked in your browser wallet.`,
+    );
+  }
+
+  const client = createClient({
+    chain: studionet,
+    endpoint: GENLAYER_RPC_URL,
+    account: params.fromAddress as `0x${string}`,
+    provider: provider as never,
+  });
+
+  const constructorArgs = [
+    params.provider,
+    params.client,
+    JSON.stringify(params.evidenceDomains),
+    params.quorumRequired,
+    params.start,
+    params.end,
+    BigInt(params.bondAmountWei),
+    JSON.stringify(params.tierUptimeThresholdsBps),
+    JSON.stringify(params.tierPenaltyBps),
+  ];
+
+  const hash = await client.deployContract({
+    code: NEXUS_SLA_CONTRACT_CODE,
+    args: constructorArgs,
+  });
+
+  const receipt = await client.waitForTransactionReceipt({
+    hash: hash as any,
+    status: TransactionStatus.ACCEPTED,
+    interval: 5000,
+    retries: 120,
+  });
+
+  const deployedAddress =
+    (receipt as any).contractAddress ||
+    (receipt as any).recipient ||
+    (receipt as any).to_address ||
+    (receipt as any).txDataDecoded?.contractAddress ||
+    (receipt as any).dataDecoded?.contractAddress;
+
+  if (!deployedAddress || deployedAddress === "0x0000000000000000000000000000000000000000") {
+    const fullTx = await client.getTransaction({ hash: hash as any });
+    const fullAddr =
+      (fullTx as any).contractAddress ||
+      (fullTx as any).recipient ||
+      (fullTx as any).to_address ||
+      (fullTx as any).txDataDecoded?.contractAddress;
+    if (fullAddr && fullAddr !== "0x0000000000000000000000000000000000000000") {
+      return {
+        contractAddress: fullAddr,
+        hash: String(hash),
+        status: String(receipt.statusName ?? receipt.status ?? "ACCEPTED"),
+      };
+    }
+    throw new Error(
+      `Deployment accepted (tx ${hash}), but unable to extract contract address from transaction receipt.`,
+    );
+  }
+
+  return {
+    contractAddress: deployedAddress,
+    hash: String(hash),
+    status: String(receipt.statusName ?? receipt.status ?? "ACCEPTED"),
+  };
 }

@@ -34,6 +34,7 @@ export function Sidebar() {
     refreshing,
     refreshState,
     disconnectWallet,
+    activeContractAddress,
   } = useNexus();
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const {
@@ -275,13 +276,13 @@ export function Sidebar() {
           {(!isDesktopCollapsed || isMobileNavOpen) && (
             <div className="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-100 text-[11px]">
               <div className="text-[9px] font-bold uppercase text-slate-400">
-                Intelligent Contract
+                Active Contract
               </div>
               <div
                 className="mono font-semibold text-slate-700 truncate"
-                title={CONTRACT_ADDRESS || undefined}
+                title={activeContractAddress || undefined}
               >
-                {CONTRACT_ADDRESS ? truncateAddress(CONTRACT_ADDRESS, 8, 6) : "Not configured"}
+                {activeContractAddress ? truncateAddress(activeContractAddress, 8, 6) : "Not configured"}
               </div>
             </div>
           )}
