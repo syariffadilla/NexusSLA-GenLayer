@@ -42,7 +42,6 @@ interface NexusContextType {
   wallet: WalletState;
   connectWallet: (specificProvider?: unknown) => Promise<void>;
   disconnectWallet: () => void;
-  switchAccount: (role: "provider" | "client" | "custom", customAddress?: string) => void;
   userRole: UserRole;
 
   // Contract state — get_state()
@@ -102,14 +101,9 @@ export function NexusProvider({ children }: { children: ReactNode }) {
   const [rpcStatus, setRpcStatus] = useState<RpcStatusInfo | null>(null);
   const [txState, setTxState] = useState<TransactionState | null>(null);
 
-  // Restore saved session address / detect browser wallet on mount
+  // Detect active browser wallet accounts on mount and on accountsChanged
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const savedWallet = localStorage.getItem("nexussla_connected_wallet");
-    if (savedWallet) {
-      setWallet({ connected: true, address: savedWallet, connecting: false });
-      return;
-    }
 
     const eth = (window as unknown as {
       ethereum?: {
@@ -117,29 +111,34 @@ export function NexusProvider({ children }: { children: ReactNode }) {
         on?: (event: string, handler: (data: unknown) => void) => void;
       };
     }).ethereum;
-    if (!eth) return;
 
-    eth
-      .request({ method: "eth_accounts" })
-      .then((accounts) => {
+    if (eth) {
+      eth
+        .request({ method: "eth_accounts" })
+        .then((accounts) => {
+          if (accounts && accounts.length > 0) {
+            setWallet({ connected: true, address: accounts[0], connecting: false });
+          } else {
+            setWallet({ connected: false, address: null, connecting: false });
+            localStorage.removeItem("nexussla_connected_wallet");
+          }
+        })
+        .catch(() => {
+          setWallet({ connected: false, address: null, connecting: false });
+        });
+
+      eth.on?.("accountsChanged", (accs: unknown) => {
+        const accounts = accs as string[];
         if (accounts && accounts.length > 0) {
           setWallet({ connected: true, address: accounts[0], connecting: false });
+        } else {
+          setWallet({ connected: false, address: null, connecting: false });
+          localStorage.removeItem("nexussla_connected_wallet");
         }
-      })
-      .catch(() => {
-        // Ignore
       });
-
-    eth.on?.("accountsChanged", (accs: unknown) => {
-      const accounts = accs as string[];
-      if (accounts && accounts.length > 0) {
-        setWallet({ connected: true, address: accounts[0], connecting: false });
-        localStorage.setItem("nexussla_connected_wallet", accounts[0]);
-      } else {
-        setWallet({ connected: false, address: null, connecting: false });
-        localStorage.removeItem("nexussla_connected_wallet");
-      }
-    });
+    } else {
+      setWallet({ connected: false, address: null, connecting: false });
+    }
   }, []);
 
   const setRpcUrl = useCallback((newUrl: string) => {
@@ -252,35 +251,12 @@ export function NexusProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Read-only address session. Provider/Client addresses come from the live
-  // get_state() result — never from a hardcoded constant.
-  const switchAccount = useCallback(
-    (role: "provider" | "client" | "custom", customAddress?: string) => {
-      let addr: string | undefined;
-      if (role === "provider") addr = contractState?.provider;
-      else if (role === "client") addr = contractState?.client;
-      else addr = customAddress;
-      if (!addr) {
-        throw new Error(
-          role === "custom"
-            ? "No address provided"
-            : `Cannot select ${role}: get_state() has not returned yet.`,
-        );
-      }
-      setWallet({ connected: true, address: addr, connecting: false });
-      if (typeof window !== "undefined") {
-        localStorage.setItem("nexussla_connected_wallet", addr);
-      }
-    },
-    [contractState],
-  );
-
   const userRole: UserRole = (() => {
     if (!wallet.connected || !wallet.address) return "Disconnected";
     if (!contractState) return "Unknown";
     const current = wallet.address.toLowerCase();
-    if (current === contractState.provider.toLowerCase()) return "Provider";
-    if (current === contractState.client.toLowerCase()) return "Client";
+    if (contractState.provider && current === contractState.provider.toLowerCase()) return "Provider";
+    if (contractState.client && current === contractState.client.toLowerCase()) return "Client";
     return "Auditor";
   })();
 
@@ -290,7 +266,6 @@ export function NexusProvider({ children }: { children: ReactNode }) {
         wallet,
         connectWallet,
         disconnectWallet,
-        switchAccount,
         userRole,
         contractState,
         stateRaw,

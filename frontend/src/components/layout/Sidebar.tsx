@@ -34,7 +34,6 @@ export function Sidebar() {
     refreshing,
     refreshState,
     disconnectWallet,
-    switchAccount,
   } = useNexus();
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const {
@@ -183,35 +182,8 @@ export function Sidebar() {
               </div>
               {wallet.connected && wallet.address && (
                 <div className="mt-1 pt-1.5 border-t border-purple-100/80">
-                  <div className="text-[10px] font-mono text-slate-500 truncate mb-1.5" title={wallet.address}>
+                  <div className="text-[10px] font-mono text-slate-500 truncate" title={wallet.address}>
                     {truncateAddress(wallet.address, 6, 4)}
-                  </div>
-                  <div className="flex items-center justify-between text-[10px]">
-                    <span className="text-slate-400">Test role:</span>
-                    <div className="flex gap-1">
-                      <button
-                        onClick={() => switchAccount("provider")}
-                        className={`px-1.5 py-0.5 rounded text-[9px] font-semibold transition-all border ${
-                          userRole === "Provider"
-                            ? "bg-purple-600 text-white border-purple-600"
-                            : "bg-white text-slate-600 hover:bg-slate-50 border-slate-200"
-                        }`}
-                        title="Simulate actions as designated Provider"
-                      >
-                        Provider
-                      </button>
-                      <button
-                        onClick={() => switchAccount("client")}
-                        className={`px-1.5 py-0.5 rounded text-[9px] font-semibold transition-all border ${
-                          userRole === "Client"
-                            ? "bg-purple-600 text-white border-purple-600"
-                            : "bg-white text-slate-600 hover:bg-slate-50 border-slate-200"
-                        }`}
-                        title="Simulate actions as designated Client"
-                      >
-                        Client
-                      </button>
-                    </div>
                   </div>
                 </div>
               )}

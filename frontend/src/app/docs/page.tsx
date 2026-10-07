@@ -33,7 +33,6 @@ export default function DocumentationPage() {
     rpcStatus,
     checkRpc,
     userRole,
-    switchAccount,
     wallet,
   } = useNexus();
 
@@ -161,26 +160,10 @@ export default function DocumentationPage() {
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row items-center gap-2 flex-shrink-0">
-                <button
-                  onClick={() => switchAccount("provider")}
-                  className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                    userRole === "Provider"
-                      ? "bg-purple-600 text-white border-purple-600 shadow-md"
-                      : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
-                  }`}
-                >
-                  Simulate Provider (0x3424...)
-                </button>
-                <button
-                  onClick={() => switchAccount("client")}
-                  className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                    userRole === "Client"
-                      ? "bg-purple-600 text-white border-purple-600 shadow-md"
-                      : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
-                  }`}
-                >
-                  Simulate Client (0x90e1...)
-                </button>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+                  <span className="w-2 h-2 rounded-full bg-purple-600 animate-pulse" />
+                  Auto-detected from Web3 Wallet
+                </span>
               </div>
             </div>
           </div>
