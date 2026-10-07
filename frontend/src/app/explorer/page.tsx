@@ -39,6 +39,7 @@ export default function ExplorerPage() {
     rpcStatus,
     checkRpc,
     refreshState,
+    activeContractAddress,
   } = useNexus();
 
   const [inputUrl, setInputUrl] = useState(rpcUrl);
@@ -51,10 +52,12 @@ export default function ExplorerPage() {
     setTimeout(() => setCopiedAddress(null), 2000);
   };
 
+  const currentContract = activeContractAddress || CONTRACT_ADDRESS;
+
   const ecosystemContracts = [
     {
       name: "NexusSLA Autonomous Court",
-      address: CONTRACT_ADDRESS,
+      address: currentContract,
       role: "Core Intelligent Contract & Escrow Engine",
       status: contractState?.state ?? "Active",
       verified: true,
@@ -140,16 +143,16 @@ export default function ExplorerPage() {
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-sm sm:text-base font-mono font-semibold text-slate-900 break-all">
-                  {CONTRACT_ADDRESS}
+                  {currentContract}
                 </span>
-                <CopyButton text={CONTRACT_ADDRESS} />
+                <CopyButton text={currentContract} />
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             <a
-              href={`${GENLAYER_EXPLORER_URL}/contracts/${CONTRACT_ADDRESS}`}
+              href={`${GENLAYER_EXPLORER_URL}/contracts/${currentContract}`}
               target="_blank"
               rel="noopener noreferrer"
               className="btn-portal-secondary text-xs no-underline"

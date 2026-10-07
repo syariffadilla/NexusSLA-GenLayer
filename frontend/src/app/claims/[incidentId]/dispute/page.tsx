@@ -22,7 +22,7 @@ export default function DisputeClaimPage() {
   const params = useParams();
   const router = useRouter();
   const incidentId = (params.incidentId as string) || "";
-  const { contractState, contractConfig, wallet, refreshState } = useNexus();
+  const { contractState, contractConfig, wallet, refreshState, activeContractAddress } = useNexus();
 
   const [urls, setUrls] = useState<string[]>([""]);
   const [submitting, setSubmitting] = useState(false);
@@ -107,8 +107,8 @@ export default function DisputeClaimPage() {
       if (!wallet.connected || !wallet.address) {
         throw new Error("Wallet not connected. Connect provider wallet first.");
       }
-      await disputeClaim(wallet.address, urls.filter(Boolean));
-      await refreshState();
+      await disputeClaim(wallet.address, urls.filter(Boolean), activeContractAddress);
+      await refreshState(activeContractAddress);
       setSubmitted(true);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Failed to submit dispute");

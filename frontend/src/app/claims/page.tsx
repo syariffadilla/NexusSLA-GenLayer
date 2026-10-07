@@ -18,7 +18,7 @@ import {
 import type { ClaimHistoryEntry } from "@/types/nexus-sla";
 
 export default function ClaimsPage() {
-  const { contractState, loading, wallet, refreshState } = useNexus();
+  const { contractState, loading, wallet, refreshState, activeContractAddress } = useNexus();
   const [finalizing, setFinalizing] = useState(false);
   const [finalizeSuccess, setFinalizeSuccess] = useState(false);
 
@@ -34,8 +34,8 @@ export default function ClaimsPage() {
     }
     setFinalizing(true);
     try {
-      await finalizeClaim(wallet.address);
-      await refreshState();
+      await finalizeClaim(wallet.address, activeContractAddress);
+      await refreshState(activeContractAddress);
       setFinalizeSuccess(true);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Finalize failed");

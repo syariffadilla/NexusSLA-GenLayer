@@ -31,7 +31,10 @@ export function DashboardPortal() {
     loading,
     refreshing,
     error,
+    activeContractAddress,
   } = useNexus();
+
+  const currentContractAddr = activeContractAddress || CONTRACT_ADDRESS;
 
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -72,8 +75,8 @@ export function DashboardPortal() {
     }
     setFinalizing(true);
     try {
-      await finalizeClaim(wallet.address);
-      await refreshState();
+      await finalizeClaim(wallet.address, currentContractAddr);
+      await refreshState(currentContractAddr);
       setFinalizeSuccess(true);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Finalize failed");
@@ -115,7 +118,7 @@ export function DashboardPortal() {
                 : "Not available from current contract",
             metric3Label: "Quorum",
             metric3Val: `${contractState.quorum_required} Sources`,
-            contractAddress: CONTRACT_ADDRESS,
+            contractAddress: currentContractAddr,
             href: "/sla",
           },
         ]
@@ -149,7 +152,7 @@ export function DashboardPortal() {
                 : "Not available",
             metric3Label: "Agreeing Sources",
             metric3Val: `${pending.sources_agreeing ?? 0} / ${contractState?.quorum_required ?? 2} Sources`,
-            contractAddress: CONTRACT_ADDRESS,
+            contractAddress: currentContractAddr,
             href: `/court/${String(pending.incident_id || "pending")}`,
             isPendingClaim: true,
           },
@@ -185,7 +188,7 @@ export function DashboardPortal() {
           : h.sources_agreeing
           ? `${h.sources_agreeing} Sources Agree`
           : "Majority Agree",
-      contractAddress: CONTRACT_ADDRESS,
+      contractAddress: currentContractAddr,
       href: `/court/${h.incident_id || `case-${idx}`}`,
     })),
   ];
@@ -608,9 +611,9 @@ export function DashboardPortal() {
                     <div className="flex items-center gap-1.5 text-slate-500 font-mono text-[11px]">
                       <span className="text-slate-400">Contract</span>
                       <span className="font-semibold text-slate-700">
-                        {CONTRACT_ADDRESS ? truncateAddress(CONTRACT_ADDRESS) : "Not configured"}
+                        {currentContractAddr ? truncateAddress(currentContractAddr) : "Not configured"}
                       </span>
-                      {CONTRACT_ADDRESS && <CopyButton text={CONTRACT_ADDRESS} />}
+                      {currentContractAddr && <CopyButton text={currentContractAddr} />}
                     </div>
 
                     <div className="flex items-center gap-3">

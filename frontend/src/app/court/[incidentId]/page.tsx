@@ -25,7 +25,7 @@ import {
 export default function CourtCaseDetail() {
   const params = useParams();
   const incidentId = params.incidentId as string;
-  const { contractState, loading, wallet, refreshState } = useNexus();
+  const { contractState, loading, wallet, refreshState, activeContractAddress } = useNexus();
 
   const [finalizing, setFinalizing] = useState(false);
   const [finalizeSuccess, setFinalizeSuccess] = useState(false);
@@ -88,8 +88,8 @@ export default function CourtCaseDetail() {
       if (!wallet.connected || !wallet.address) {
         throw new Error("Wallet not connected");
       }
-      await finalizeClaim(wallet.address);
-      await refreshState();
+      await finalizeClaim(wallet.address, activeContractAddress);
+      await refreshState(activeContractAddress);
       setFinalizeSuccess(true);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Failed to finalize claim");
