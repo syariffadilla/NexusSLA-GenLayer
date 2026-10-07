@@ -226,7 +226,7 @@ Respond ONLY with valid JSON (no markdown):
         raw = gl.eq_principle.prompt_comparative(
             check_incident,
             "Validators must agree on whether consensus_reached is true or false. "
-            "If true, they must agree on general incident_id and impact level.",
+            "If true, they must agree on incident_id, start_time_unix, end_time_unix, impact level, and sources_agreeing.",
         )
         parsed = json.loads(raw)
 
@@ -341,7 +341,7 @@ Respond ONLY with JSON:
 
         raw = gl.eq_principle.prompt_comparative(
             re_check,
-            "Validators must agree on whether the penalty is upheld and the revised impact level.",
+            "Validators must agree on whether the penalty is upheld, the revised impact level, and sources_agreeing.",
         )
         parsed = json.loads(raw)
 

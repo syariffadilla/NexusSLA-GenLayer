@@ -119,14 +119,14 @@ export default function FileClaimPage() {
 
     if (isProvider) {
       setErrorMsg(
-        `Role Restriction: You are currently connected as the Provider (${truncateAddress(contractState?.provider)}). Under the bilateral SLA agreement, claims can ONLY be filed by the designated Client (${truncateAddress(contractState?.client)}). Please switch accounts in Rabby / MetaMask.`,
+        `Role Restriction: You are currently connected as the Provider (${truncateAddress(contractState?.provider || "")}). Under the bilateral SLA agreement, claims can ONLY be filed by the designated Client (${truncateAddress(contractState?.client || "")}). Please switch accounts in Rabby / MetaMask.`,
       );
       return;
     }
 
     if (contractState?.client && !isClient) {
       setErrorMsg(
-        `Unauthorized: Only the designated Client (${truncateAddress(contractState.client)}) can file outage claims against this SLA. Your current wallet is ${truncateAddress(wallet.address)}.`,
+        `Unauthorized: Only the designated Client (${truncateAddress(contractState.client)}). Your current wallet is ${truncateAddress(wallet.address || "")}.`,
       );
       return;
     }
@@ -347,11 +347,11 @@ export default function FileClaimPage() {
               <AlertCircle size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
               <div>
                 <span className="font-bold block mb-0.5">
-                  Connected as Provider ({truncateAddress(wallet.address)})
+                  Connected as Provider ({truncateAddress(wallet.address || "")})
                 </span>
                 <span>
                   Under this bilateral agreement, outage claims can <strong>ONLY</strong> be filed by the designated Client (
-                  <span className="font-mono font-bold text-amber-950">{truncateAddress(contractState?.client)}</span>
+                  <span className="font-mono font-bold text-amber-950">{truncateAddress(contractState?.client || "")}</span>
                   ). Please switch to your Client wallet account in Rabby / MetaMask to proceed.
                 </span>
               </div>

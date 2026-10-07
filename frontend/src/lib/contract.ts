@@ -383,7 +383,6 @@ async function callWriteMethod(
     status: TransactionStatus.ACCEPTED,
     interval: 5000,
     retries: 120,
-    fullTransaction: true,
   });
 
   const rawTx = receipt as any;
