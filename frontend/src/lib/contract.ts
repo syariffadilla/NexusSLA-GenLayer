@@ -149,13 +149,123 @@ export async function testRpcConnection(targetUrl?: string): Promise<{
 // only sessions (role shortcuts, pasted addresses) are read-only and cannot
 // sign — we surface that as an error instead of pretending it succeeded.
 
-type Eip1193Provider = {
+export type Eip1193Provider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
 };
 
-function getInjectedProvider(): Eip1193Provider | null {
-  if (typeof window === "undefined") return null;
-  return (window as unknown as { ethereum?: Eip1193Provider }).ethereum ?? null;
+let activeInjectedProvider: Eip1193Provider | null = null;
+
+export function setActiveInjectedProvider(provider: unknown) {
+  if (provider && typeof (provider as any).request === "function") {
+    activeInjectedProvider = provider as Eip1193Provider;
+  } else {
+    activeInjectedProvider = null;
+  }
+}
+
+export function getActiveInjectedProvider(): Eip1193Provider | null {
+  return activeInjectedProvider;
+}
+
+export function getAllInjectedProviders(): Eip1193Provider[] {
+  if (typeof window === "undefined") return [];
+  const list: Eip1193Provider[] = [];
+  const win = window as any;
+
+  if (activeInjectedProvider) list.push(activeInjectedProvider);
+
+  if (win.ethereum) {
+    if (Array.isArray(win.ethereum.providers)) {
+      for (const p of win.ethereum.providers) {
+        if (p && typeof p.request === "function" && !list.includes(p)) list.push(p);
+      }
+    }
+    if (!list.includes(win.ethereum)) list.push(win.ethereum);
+  }
+  if (win.rabby && typeof win.rabby.request === "function" && !list.includes(win.rabby)) {
+    list.push(win.rabby);
+  }
+  if (win.okxwallet && typeof win.okxwallet.request === "function" && !list.includes(win.okxwallet)) {
+    list.push(win.okxwallet);
+  }
+  if (win.phantom?.ethereum && !list.includes(win.phantom.ethereum)) {
+    list.push(win.phantom.ethereum);
+  }
+  return list;
+}
+
+export async function resolveProviderForAddress(fromAddress: string): Promise<Eip1193Provider> {
+  const providers = getAllInjectedProviders();
+  if (providers.length === 0) {
+    throw new Error(
+      "No Web3 browser wallet detected (MetaMask / Rabby). Please install a supported Web3 extension.",
+    );
+  }
+
+  // 1. Check if activeInjectedProvider already matches
+  if (activeInjectedProvider) {
+    try {
+      let accs = ((await activeInjectedProvider.request({ method: "eth_accounts" })) as string[]) || [];
+      if (accs.some((a) => a.toLowerCase() === fromAddress.toLowerCase())) {
+        return activeInjectedProvider;
+      }
+      if (accs.length === 0) {
+        accs = ((await activeInjectedProvider.request({ method: "eth_requestAccounts" })) as string[]) || [];
+        if (accs.some((a) => a.toLowerCase() === fromAddress.toLowerCase())) {
+          return activeInjectedProvider;
+        }
+      }
+    } catch {
+      // continue to discovery
+    }
+  }
+
+  // 2. Search other discovered providers passively
+  for (const prov of providers) {
+    if (prov === activeInjectedProvider) continue;
+    try {
+      const accs = ((await prov.request({ method: "eth_accounts" })) as string[]) || [];
+      if (accs.some((a) => a.toLowerCase() === fromAddress.toLowerCase())) {
+        activeInjectedProvider = prov;
+        return prov;
+      }
+    } catch {
+      // continue
+    }
+  }
+
+  // 3. Prompt eth_requestAccounts on candidate
+  const candidate = activeInjectedProvider || providers[0];
+  try {
+    const accs = ((await candidate.request({ method: "eth_requestAccounts" })) as string[]) || [];
+    if (accs.some((a) => a.toLowerCase() === fromAddress.toLowerCase())) {
+      activeInjectedProvider = candidate;
+      return candidate;
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("rejected") || msg.includes("denied")) {
+      throw new Error("Connection request was rejected in your wallet extension.");
+    }
+  }
+
+  // 4. Try requestAccounts on remaining providers
+  for (const prov of providers) {
+    if (prov === candidate) continue;
+    try {
+      const accs = ((await prov.request({ method: "eth_requestAccounts" })) as string[]) || [];
+      if (accs.some((a) => a.toLowerCase() === fromAddress.toLowerCase())) {
+        activeInjectedProvider = prov;
+        return prov;
+      }
+    } catch {
+      // continue
+    }
+  }
+
+  throw new Error(
+    `Wallet account mismatch: Your wallet extension is not currently showing account ${fromAddress.slice(0, 6)}...${fromAddress.slice(-4)}. Please switch to this account in MetaMask / Rabby.`,
+  );
 }
 
 export interface WriteResult {
@@ -172,18 +282,7 @@ async function callWriteMethod(
   targetAddress?: string,
 ): Promise<WriteResult> {
   const address = resolveAddress(targetAddress);
-  const provider = getInjectedProvider();
-  if (!provider) {
-    throw new Error(
-      "No browser wallet detected. Transactions must be signed by MetaMask/Rabby; address-only sessions are read-only.",
-    );
-  }
-  const accounts = ((await provider.request({ method: "eth_accounts" })) as string[]) || [];
-  if (!accounts.some((a) => a.toLowerCase() === fromAddress.toLowerCase())) {
-    throw new Error(
-      `Session address ${fromAddress} is not unlocked in your browser wallet. Read-only sessions cannot sign transactions.`,
-    );
-  }
+  const provider = await resolveProviderForAddress(fromAddress);
 
   const client = createClient({
     chain: studionet,
@@ -251,18 +350,7 @@ export interface DeployResult {
 }
 
 export async function deploySlaContract(params: DeploySlaParams): Promise<DeployResult> {
-  const provider = getInjectedProvider();
-  if (!provider) {
-    throw new Error(
-      "No browser wallet detected. Deployment requires a connected Web3 wallet (MetaMask / Rabby).",
-    );
-  }
-  const accounts = ((await provider.request({ method: "eth_accounts" })) as string[]) || [];
-  if (!accounts.some((a) => a.toLowerCase() === params.fromAddress.toLowerCase())) {
-    throw new Error(
-      `Session address ${params.fromAddress} is not unlocked in your browser wallet.`,
-    );
-  }
+  const provider = await resolveProviderForAddress(params.fromAddress);
 
   const client = createClient({
     chain: studionet,

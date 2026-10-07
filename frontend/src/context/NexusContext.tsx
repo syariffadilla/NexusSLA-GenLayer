@@ -21,6 +21,7 @@ import {
   getContractConfig,
   getContractState,
   setActiveContractAddressInMemory,
+  setActiveInjectedProvider,
   setCustomRpcUrl,
   testRpcConnection,
 } from "@/lib/contract";
@@ -219,6 +220,7 @@ export function NexusProvider({ children }: { children: ReactNode }) {
     }).ethereum;
 
     if (eth) {
+      setActiveInjectedProvider(eth);
       eth
         .request({ method: "eth_accounts" })
         .then((accounts) => {
@@ -341,6 +343,7 @@ export function NexusProvider({ children }: { children: ReactNode }) {
       if (eth) {
         const accounts = await eth.request({ method: "eth_requestAccounts" });
         if (accounts && accounts.length > 0) {
+          setActiveInjectedProvider(eth);
           setWallet({ connected: true, address: accounts[0], connecting: false });
           localStorage.setItem("nexussla_connected_wallet", accounts[0]);
           return;
@@ -348,12 +351,14 @@ export function NexusProvider({ children }: { children: ReactNode }) {
       }
       throw new Error("No Web3 wallet found. Please install a supported Web3 extension.");
     } catch (err) {
+      setActiveInjectedProvider(null);
       setWallet({ connected: false, address: null, connecting: false });
       throw err;
     }
   }, []);
 
   const disconnectWallet = useCallback(() => {
+    setActiveInjectedProvider(null);
     setWallet({ connected: false, address: null, connecting: false });
     if (typeof window !== "undefined") {
       localStorage.removeItem("nexussla_connected_wallet");

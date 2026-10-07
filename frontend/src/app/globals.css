@@ -441,22 +441,25 @@ body {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
-  background: rgba(15, 23, 42, 0.5);
-  backdrop-filter: blur(4px);
+  z-index: 9999;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
 }
-.modal-card {
+.modal-card,
+.modal-content {
   background: #FFFFFF;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
   padding: 28px;
-  max-width: 480px;
+  max-width: 520px;
   width: 100%;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  position: relative;
+  z-index: 10000;
 }
 
 /* Skeleton */
