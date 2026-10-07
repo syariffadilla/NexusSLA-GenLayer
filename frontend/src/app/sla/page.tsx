@@ -20,6 +20,7 @@ import {
 export default function SLAPage() {
   const {
     contractState,
+    contractConfig,
     loading,
     wallet,
     refreshState,
@@ -34,6 +35,18 @@ export default function SLAPage() {
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (contractConfig?.bond_amount) {
+      try {
+        const bondWei = BigInt(contractConfig.bond_amount);
+        const gen = Number(bondWei / BigInt(1e14)) / 10000;
+        setDepositAmount(gen.toFixed(2));
+      } catch {
+        // keep fallback
+      }
+    }
+  }, [contractConfig?.bond_amount]);
+
   const handleDeposit = async () => {
     setActionLoading(true);
     setActionError(null);
@@ -43,12 +56,20 @@ export default function SLAPage() {
       if (!wallet.connected || !wallet.address) {
         throw new Error("Wallet not connected. Connect provider wallet first.");
       }
+      if (contractState?.provider && wallet.address.toLowerCase() !== contractState.provider.toLowerCase()) {
+        throw new Error(
+          `Wallet role mismatch: Only the designated Provider (${contractState.provider.slice(0, 6)}...${contractState.provider.slice(-4)}) can deposit collateral. Your active wallet is ${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)}.`,
+        );
+      }
       const num = parseFloat(depositAmount);
       if (isNaN(num) || num <= 0) throw new Error("Please enter a valid deposit amount");
-      const wei = (BigInt(Math.round(num * 1e9)) * BigInt(1e9)).toString();
-      await depositBond(wallet.address, wei, activeContractAddress);
+      const bondWei = contractConfig?.bond_amount
+        ? String(contractConfig.bond_amount)
+        : (BigInt(Math.round(num * 1e9)) * BigInt(1e9)).toString();
+
+      await depositBond(wallet.address, bondWei, activeContractAddress);
       await refreshState(activeContractAddress);
-      setActionSuccess(`Successfully deposited ${depositAmount} GEN bond.`);
+      setActionSuccess(`Successfully deposited ${depositAmount} GEN bond. Contract is now ACTIVE!`);
       setDepositOpen(false);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Deposit failed");
@@ -96,10 +117,16 @@ export default function SLAPage() {
             Manage active reliability agreements, bonded provider collateral, and court arbitration parameters.
           </p>
         </div>
-        <Link href="/sla/create" className="btn-portal-primary no-underline self-start sm:self-auto">
-          <Plus size={13} />
-          <span>Create SLA Agreement</span>
-        </Link>
+        <div className="flex items-center gap-2.5 self-start sm:self-auto">
+          <Link href="/sla/deposit" className="btn-portal-secondary no-underline inline-flex items-center gap-1.5">
+            <Coins size={13} className="text-purple-600" />
+            <span>Deposit Collateral</span>
+          </Link>
+          <Link href="/sla/create" className="btn-portal-primary no-underline inline-flex items-center gap-1.5">
+            <Plus size={13} />
+            <span>Create SLA Agreement</span>
+          </Link>
+        </div>
       </div>
 
       {actionSuccess && (
@@ -126,7 +153,7 @@ export default function SLAPage() {
             </div>
           ))}
         </div>
-      ) : !contractState || (contractState.state === "UNINITIALIZED" && contractState.history.length === 0) ? (
+      ) : !contractState || (!contractState.provider || contractState.provider === "0x0000000000000000000000000000000000000000") ? (
         <div className="bg-white border border-[#E2E8F0] rounded-2xl p-8 shadow-sm">
           <EmptyState
             title="No Active SLAs"
@@ -160,6 +187,24 @@ export default function SLAPage() {
                 <StatusBadge status={contractState.state} />
               </div>
             </div>
+
+            {contractState.state === "UNINITIALIZED" && (
+              <div className="mb-4 p-3.5 rounded-xl bg-purple-50 border border-purple-200 text-purple-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <Coins size={18} className="text-purple-600 flex-shrink-0" />
+                  <div>
+                    <span className="font-bold">Provider Collateral Deposit Required:</span> Agreement is currently in <span className="font-mono font-semibold">UNINITIALIZED</span> state. Provider must deposit {contractConfig?.bond_amount ? formatBond(contractConfig.bond_amount) : "1.00 GEN"} to activate the contract.
+                  </div>
+                </div>
+                <Link
+                  href="/sla/deposit"
+                  className="btn-portal-primary text-xs py-1.5 px-3 whitespace-nowrap self-start sm:self-auto no-underline flex items-center gap-1"
+                >
+                  <Coins size={12} />
+                  <span>Deposit Bond Now</span>
+                </Link>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 sm:gap-4 mb-4 text-sm">
               <div className="bg-[#F8FAFC] border border-[#F1F5F9] rounded-xl p-2.5 sm:p-3">
@@ -207,14 +252,14 @@ export default function SLAPage() {
               </div>
 
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setDepositOpen(true)}
-                  className="btn-portal-secondary text-xs inline-flex items-center gap-1.5"
+                <Link
+                  href="/sla/deposit"
+                  className="btn-portal-secondary text-xs inline-flex items-center gap-1.5 no-underline"
                   style={{ padding: "6px 12px" }}
                 >
-                  <Coins size={13} />
+                  <Coins size={13} className="text-purple-600" />
                   Deposit Bond
-                </button>
+                </Link>
                 <button
                   onClick={handleWithdraw}
                   disabled={actionLoading}

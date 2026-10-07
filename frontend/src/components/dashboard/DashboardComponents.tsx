@@ -18,6 +18,7 @@ import {
   ArrowRight,
   Loader2,
   RefreshCw,
+  Coins,
 } from "lucide-react";
 
 export function DashboardPortal() {
@@ -232,6 +233,10 @@ export function DashboardPortal() {
             <RefreshCw size={13} className={refreshing ? "animate-spin text-purple-600" : "text-slate-500"} />
             <span>{refreshing ? "Syncing..." : "Sync State"}</span>
           </button>
+          <Link href="/sla/deposit" className="btn-portal-secondary no-underline flex items-center gap-1.5">
+            <Coins size={13} className="text-purple-600" />
+            <span>Deposit Bond</span>
+          </Link>
           <Link href="/sla/create" className="btn-portal-secondary no-underline">
             <Shield size={13} className="text-slate-500" />
             <span>Create SLA</span>
@@ -242,6 +247,31 @@ export function DashboardPortal() {
           </Link>
         </div>
       </div>
+
+      {contractState?.state === "UNINITIALIZED" && (
+        <div className="mb-6 p-4 rounded-xl bg-purple-50 border border-purple-200 text-purple-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <Coins size={18} />
+            </div>
+            <div>
+              <p className="font-semibold text-sm text-purple-950">
+                Action Required: Provider Collateral Deposit Needed
+              </p>
+              <p className="text-xs text-purple-700 mt-0.5">
+                Agreement is deployed but in <span className="font-mono font-bold">UNINITIALIZED</span> state. Provider ({truncateAddress(contractState.provider)}) must deposit {contractConfig?.bond_amount ? formatBond(contractConfig.bond_amount) : "1.00 GEN"} to activate SLA protection.
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/sla/deposit"
+            className="btn-portal-primary text-xs whitespace-nowrap self-start sm:self-auto flex items-center gap-1.5 no-underline"
+          >
+            <Coins size={13} />
+            <span>Deposit Collateral Bond</span>
+          </Link>
+        </div>
+      )}
 
       {error && (
         <div className="mb-6 p-3 sm:p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs sm:text-sm flex items-start gap-2.5">
@@ -282,6 +312,14 @@ export function DashboardPortal() {
                 : contractState?.state || (loading ? "Loading..." : "Offline")}
             </span>
           </div>
+          {contractState?.state === "UNINITIALIZED" && (
+            <Link
+              href="/sla/deposit"
+              className="text-[11px] text-purple-600 hover:text-purple-800 font-semibold no-underline inline-flex items-center gap-1 mt-2 pt-2 border-t border-slate-100"
+            >
+              <span>Deposit Collateral Bond &rarr;</span>
+            </Link>
+          )}
         </div>
 
         {/* Card 2: Court Review */}

@@ -17,6 +17,7 @@ import {
   Search,
   PlusCircle,
   FileWarning,
+  Coins,
   ChevronLeft,
   ChevronRight,
   Activity,
@@ -75,6 +76,7 @@ export function Sidebar() {
 
   const actionLinks = [
     { label: "Create SLA Agreement", href: "/sla/create", icon: PlusCircle },
+    { label: "Deposit Collateral", href: "/sla/deposit", icon: Coins },
     { label: "File Outage Claim", href: "/claims/new", icon: FileWarning },
   ];
 
