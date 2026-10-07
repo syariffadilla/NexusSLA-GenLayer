@@ -28,8 +28,6 @@ import {
 
 export default function DocumentationPage() {
   const {
-    demoMode,
-    setDemoMode,
     rpcUrl,
     setRpcUrl,
     rpcStatus,
@@ -388,25 +386,16 @@ export default function DocumentationPage() {
                   Live Node Configuration
                 </h3>
                 <p className="text-xs text-slate-500 mt-1">
-                  Choose between live on-chain queries via GenLayer Studio RPC or interactive client-side simulation.
+                  Live on-chain queries via GenLayer Studio RPC connected to intelligent contract storage.
                 </p>
               </div>
 
-              {/* Mode Toggle Button */}
+              {/* Mode Badge */}
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setDemoMode(!demoMode)}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                    demoMode
-                      ? "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
-                      : "bg-purple-600 text-white border-purple-600 hover:bg-purple-700 shadow-sm"
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <Zap size={14} />
-                    <span>Active Mode: {demoMode ? "Simulator (Offline Demo)" : "Live GenLayer RPC"}</span>
-                  </div>
-                </button>
+                <div className="px-3.5 py-2 rounded-xl text-xs font-bold border bg-emerald-50 text-emerald-800 border-emerald-200 shadow-xs flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Active Mode: Live GenLayer RPC</span>
+                </div>
               </div>
             </div>
 
@@ -524,10 +513,10 @@ export default function DocumentationPage() {
                 <p className="text-xs text-slate-600 mt-1 leading-relaxed">
                   Switch account to the designated Provider (<code>0x34242f09a2646eF4383C672b8a6BFDC9634cB232</code>).
                   Open the <strong>SLA Contracts</strong> page and click <strong>Deposit Bond</strong>.
-                  Deposit <code>0.85 GEN</code> to lock collateral into the escrow state.
+                  Deposit <code>1.00 GEN</code> to lock collateral into the escrow state.
                 </p>
                 <div className="mt-2.5 p-2 rounded-lg bg-slate-50 border border-slate-200 text-[11px] font-mono text-slate-700">
-                  On-Chain Call: <code>nexus_sla.deposit_bond() (value: 850000000000000000 wei)</code>
+                  On-Chain Call: <code>nexus_sla.deposit_bond() (value: 1000000000000000000 wei)</code>
                 </div>
               </div>
             </div>

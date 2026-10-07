@@ -8,11 +8,27 @@ import React, {
   useEffect,
   type ReactNode,
 } from "react";
-import type { ContractGetState, TransactionState, WalletState } from "@/types/nexus-sla";
-import { getContractState, setCustomRpcUrl, testRpcConnection, GENLAYER_RPC_URL } from "@/lib/contract";
-import { DEMO_CONTRACT_STATE } from "@/lib/mock-data";
+import type {
+  ContractConfig,
+  ContractGetState,
+  TransactionState,
+  WalletState,
+} from "@/types/nexus-sla";
+import {
+  CONTRACT_CONFIG_ERROR,
+  GENLAYER_RPC_URL,
+  getContractConfig,
+  getContractState,
+  setCustomRpcUrl,
+  testRpcConnection,
+} from "@/lib/contract";
 
-export type UserRole = "Provider" | "Client" | "Auditor" | "Disconnected";
+// NOTE: There is intentionally NO demo / mock mode. Every value exposed by this
+// context is either the parsed result of a live readContract() call against
+// NEXT_PUBLIC_CONTRACT_ADDRESS, or null (UI must render a skeleton / "Not
+// available"). On RPC failure we clear state rather than fall back to fixtures.
+
+export type UserRole = "Provider" | "Client" | "Auditor" | "Unknown" | "Disconnected";
 
 export interface RpcStatusInfo {
   connected: boolean;
@@ -24,20 +40,28 @@ export interface RpcStatusInfo {
 interface NexusContextType {
   // Wallet
   wallet: WalletState;
-  connectWallet: (targetAddress?: string) => Promise<void>;
+  connectWallet: (specificProvider?: unknown) => Promise<void>;
   disconnectWallet: () => void;
   switchAccount: (role: "provider" | "client" | "custom", customAddress?: string) => void;
   userRole: UserRole;
 
-  // Contract state
+  // Contract state — get_state()
   contractState: ContractGetState | null;
+  stateRaw: string | null;
+  // Contract config — get_config()
+  contractConfig: ContractConfig | null;
+  configRaw: string | null;
+  configError: string | null;
+
+  /** true until the first get_state() attempt resolves */
   loading: boolean;
+  /** true while any refresh is in flight */
+  refreshing: boolean;
   error: string | null;
+  lastFetchedAt: number | null;
   refreshState: () => Promise<void>;
 
-  // Demo / Live RPC mode
-  demoMode: boolean;
-  setDemoMode: (v: boolean) => void;
+  // RPC
   rpcUrl: string;
   setRpcUrl: (url: string) => void;
   rpcStatus: RpcStatusInfo | null;
@@ -56,8 +80,7 @@ export function useNexus() {
   return ctx;
 }
 
-const DEMO_PROVIDER_ADDRESS = "0x34242f09a2646eF4383C672b8a6BFDC9634cB232";
-const DEMO_CLIENT_ADDRESS = "0x90e1644d995B2488d4a2Bf24b88D67e04A3F9D5d";
+const POLL_INTERVAL_MS = 30_000;
 
 export function NexusProvider({ children }: { children: ReactNode }) {
   const [wallet, setWallet] = useState<WalletState>({
@@ -66,202 +89,158 @@ export function NexusProvider({ children }: { children: ReactNode }) {
     connecting: false,
   });
 
-  const [contractState, setContractState] = useState<ContractGetState | null>(DEMO_CONTRACT_STATE);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [demoMode, setDemoMode] = useState(true);
+  const [contractState, setContractState] = useState<ContractGetState | null>(null);
+  const [stateRaw, setStateRaw] = useState<string | null>(null);
+  const [contractConfig, setContractConfig] = useState<ContractConfig | null>(null);
+  const [configRaw, setConfigRaw] = useState<string | null>(null);
+  const [configError, setConfigError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(CONTRACT_CONFIG_ERROR);
+  const [lastFetchedAt, setLastFetchedAt] = useState<number | null>(null);
   const [rpcUrl, setRpcUrlState] = useState(GENLAYER_RPC_URL);
   const [rpcStatus, setRpcStatus] = useState<RpcStatusInfo | null>(null);
   const [txState, setTxState] = useState<TransactionState | null>(null);
 
-  // Check saved connection or browser wallet on mount
+  // Restore saved session address / detect browser wallet on mount
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const savedWallet = localStorage.getItem("nexussla_connected_wallet");
-      if (savedWallet) {
-        setWallet({
-          connected: true,
-          address: savedWallet,
-          connecting: false,
-        });
-        return;
-      }
+    if (typeof window === "undefined") return;
+    const savedWallet = localStorage.getItem("nexussla_connected_wallet");
+    if (savedWallet) {
+      setWallet({ connected: true, address: savedWallet, connecting: false });
+      return;
+    }
 
-      const eth = (window as unknown as { ethereum?: {
+    const eth = (window as unknown as {
+      ethereum?: {
         request: (args: { method: string }) => Promise<string[]>;
         on?: (event: string, handler: (data: unknown) => void) => void;
-      } }).ethereum;
+      };
+    }).ethereum;
+    if (!eth) return;
 
-      if (eth) {
-        eth
-          .request({ method: "eth_accounts" })
-          .then((accounts) => {
-            if (accounts && accounts.length > 0) {
-              setWallet({
-                connected: true,
-                address: accounts[0],
-                connecting: false,
-              });
-            }
-          })
-          .catch(() => {
-            // Ignore
-          });
-
-        if (eth.on) {
-          eth.on("accountsChanged", (accs: unknown) => {
-            const accounts = accs as string[];
-            if (accounts && accounts.length > 0) {
-              setWallet({
-                connected: true,
-                address: accounts[0],
-                connecting: false,
-              });
-              localStorage.setItem("nexussla_connected_wallet", accounts[0]);
-            } else {
-              setWallet({
-                connected: false,
-                address: null,
-                connecting: false,
-              });
-              localStorage.removeItem("nexussla_connected_wallet");
-            }
-          });
+    eth
+      .request({ method: "eth_accounts" })
+      .then((accounts) => {
+        if (accounts && accounts.length > 0) {
+          setWallet({ connected: true, address: accounts[0], connecting: false });
         }
+      })
+      .catch(() => {
+        // Ignore
+      });
+
+    eth.on?.("accountsChanged", (accs: unknown) => {
+      const accounts = accs as string[];
+      if (accounts && accounts.length > 0) {
+        setWallet({ connected: true, address: accounts[0], connecting: false });
+        localStorage.setItem("nexussla_connected_wallet", accounts[0]);
+      } else {
+        setWallet({ connected: false, address: null, connecting: false });
+        localStorage.removeItem("nexussla_connected_wallet");
       }
-    }
+    });
   }, []);
 
   const setRpcUrl = useCallback((newUrl: string) => {
-    const trimmed = newUrl.trim();
-    setRpcUrlState(trimmed);
-    setCustomRpcUrl(trimmed);
-    if (typeof window !== "undefined") {
-      try {
-        localStorage.setItem("nexussla_rpc_url", trimmed);
-      } catch {
-        // ignore
-      }
-    }
+    setCustomRpcUrl(newUrl);
+    setRpcUrlState(newUrl);
   }, []);
 
-  const checkRpc = useCallback(async (testUrl?: string): Promise<RpcStatusInfo> => {
-    const url = testUrl || rpcUrl;
-    const res = await testRpcConnection(url);
-    const info: RpcStatusInfo = {
-      connected: res.success,
-      latencyMs: res.latencyMs,
-      error: res.error,
-      url,
-    };
-    setRpcStatus(info);
-    return info;
-  }, [rpcUrl]);
+  const checkRpc = useCallback(
+    async (testUrl?: string): Promise<RpcStatusInfo> => {
+      const url = testUrl || rpcUrl;
+      const res = await testRpcConnection(url);
+      const info: RpcStatusInfo = {
+        connected: res.success,
+        latencyMs: res.latencyMs,
+        error: res.error,
+        url,
+      };
+      setRpcStatus(info);
+      return info;
+    },
+    [rpcUrl],
+  );
 
-  // Load persisted RPC URL if present
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem("nexussla_rpc_url");
-        if (saved) {
-          setRpcUrlState(saved);
-          setCustomRpcUrl(saved);
-        }
-      } catch {
-        // ignore
-      }
-    }
-  }, []);
-
-  // Fetch contract state
+  // Fetch get_state() and get_config() from the live contract.
   const refreshState = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-
-    if (demoMode) {
-      await new Promise((r) => setTimeout(r, 400));
-      setContractState(DEMO_CONTRACT_STATE);
+    if (CONTRACT_CONFIG_ERROR) {
+      setError(CONTRACT_CONFIG_ERROR);
       setLoading(false);
       return;
     }
+    setRefreshing(true);
+    const started = Date.now();
 
-    try {
-      const state = await getContractState();
-      setContractState(state);
-      setRpcStatus({
-        connected: true,
-        url: rpcUrl,
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to fetch contract state";
-      setError(
-        `GenLayer RPC unreachable at ${rpcUrl}. (${msg}). Pastikan GenLayer node / Studio sedang berjalan atau gunakan Simulator / Demo Mode.`
-      );
-      setRpcStatus({
-        connected: false,
-        error: msg,
-        url: rpcUrl,
-      });
-      // Fallback to demo state so UI doesn't break
-      setContractState(DEMO_CONTRACT_STATE);
-    } finally {
-      setLoading(false);
+    const [stateRes, configRes] = await Promise.allSettled([
+      getContractState(),
+      getContractConfig(),
+    ]);
+
+    if (stateRes.status === "fulfilled") {
+      setContractState(stateRes.value.data);
+      setStateRaw(stateRes.value.raw);
+      setLastFetchedAt(stateRes.value.fetchedAt);
+      setError(null);
+      setRpcStatus({ connected: true, latencyMs: Date.now() - started, url: rpcUrl });
+    } else {
+      const msg =
+        stateRes.reason instanceof Error ? stateRes.reason.message : "Failed to read get_state()";
+      // Do NOT keep stale data or substitute fixtures — clear it.
+      setContractState(null);
+      setStateRaw(null);
+      setError(`get_state() failed via ${rpcUrl}: ${msg}`);
+      setRpcStatus({ connected: false, error: msg, url: rpcUrl });
     }
-  }, [demoMode, rpcUrl]);
+
+    if (configRes.status === "fulfilled") {
+      setContractConfig(configRes.value.data);
+      setConfigRaw(configRes.value.raw);
+      setConfigError(null);
+    } else {
+      setContractConfig(null);
+      setConfigRaw(null);
+      setConfigError(
+        configRes.reason instanceof Error
+          ? configRes.reason.message
+          : "get_config() not available from current contract",
+      );
+    }
+
+    setRefreshing(false);
+    setLoading(false);
+  }, [rpcUrl]);
 
   useEffect(() => {
     refreshState();
+    const id = setInterval(refreshState, POLL_INTERVAL_MS);
+    return () => clearInterval(id);
   }, [refreshState]);
 
-  // Connect wallet
-  const connectWallet = useCallback(async (targetAddress?: string) => {
-    if (targetAddress) {
-      const addr =
-        targetAddress === "provider"
-          ? DEMO_PROVIDER_ADDRESS
-          : targetAddress === "client"
-          ? DEMO_CLIENT_ADDRESS
-          : targetAddress;
-      setWallet({
-        connected: true,
-        address: addr,
-        connecting: false,
-      });
-      if (typeof window !== "undefined") {
-        localStorage.setItem("nexussla_connected_wallet", addr);
-      }
-      return;
-    }
-
+  // Connect a real injected browser wallet (MetaMask / Rabby / OKX / Phantom, etc.).
+  const connectWallet = useCallback(async (specificProvider?: unknown) => {
     setWallet((prev) => ({ ...prev, connecting: true }));
-
     try {
-      const eth =
+      const eth = (specificProvider || (
         typeof window !== "undefined"
-          ? (window as unknown as { ethereum?: { request: (args: { method: string }) => Promise<string[]> } }).ethereum
-          : undefined;
+          ? (window as unknown as {
+              ethereum?: { request: (args: { method: string }) => Promise<string[]> };
+            }).ethereum
+          : undefined
+      )) as { request: (args: { method: string }) => Promise<string[]> } | undefined;
 
       if (eth) {
         const accounts = await eth.request({ method: "eth_requestAccounts" });
         if (accounts && accounts.length > 0) {
-          setWallet({
-            connected: true,
-            address: accounts[0],
-            connecting: false,
-          });
-          if (typeof window !== "undefined") {
-            localStorage.setItem("nexussla_connected_wallet", accounts[0]);
-          }
+          setWallet({ connected: true, address: accounts[0], connecting: false });
+          localStorage.setItem("nexussla_connected_wallet", accounts[0]);
           return;
         }
       }
-      throw new Error("No Web3 wallet found. Please install MetaMask or select a Developer Test Role.");
+      throw new Error("No Web3 wallet found. Please install a supported Web3 extension.");
     } catch (err) {
-      setWallet({
-        connected: false,
-        address: null,
-        connecting: false,
-      });
+      setWallet({ connected: false, address: null, connecting: false });
       throw err;
     }
   }, []);
@@ -273,28 +252,35 @@ export function NexusProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Switch between accounts easily for testing/demo
-  const switchAccount = useCallback((role: "provider" | "client" | "custom", customAddress?: string) => {
-    let addr = DEMO_PROVIDER_ADDRESS;
-    if (role === "provider") addr = DEMO_PROVIDER_ADDRESS;
-    else if (role === "client") addr = DEMO_CLIENT_ADDRESS;
-    else if (customAddress) addr = customAddress;
+  // Read-only address session. Provider/Client addresses come from the live
+  // get_state() result — never from a hardcoded constant.
+  const switchAccount = useCallback(
+    (role: "provider" | "client" | "custom", customAddress?: string) => {
+      let addr: string | undefined;
+      if (role === "provider") addr = contractState?.provider;
+      else if (role === "client") addr = contractState?.client;
+      else addr = customAddress;
+      if (!addr) {
+        throw new Error(
+          role === "custom"
+            ? "No address provided"
+            : `Cannot select ${role}: get_state() has not returned yet.`,
+        );
+      }
+      setWallet({ connected: true, address: addr, connecting: false });
+      if (typeof window !== "undefined") {
+        localStorage.setItem("nexussla_connected_wallet", addr);
+      }
+    },
+    [contractState],
+  );
 
-    setWallet({ connected: true, address: addr, connecting: false });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("nexussla_connected_wallet", addr);
-    }
-  }, []);
-
-  // Compute current user role
   const userRole: UserRole = (() => {
     if (!wallet.connected || !wallet.address) return "Disconnected";
+    if (!contractState) return "Unknown";
     const current = wallet.address.toLowerCase();
-    const provider = (contractState?.provider || DEMO_PROVIDER_ADDRESS).toLowerCase();
-    const client = (contractState?.client || DEMO_CLIENT_ADDRESS).toLowerCase();
-
-    if (current === provider) return "Provider";
-    if (current === client) return "Client";
+    if (current === contractState.provider.toLowerCase()) return "Provider";
+    if (current === contractState.client.toLowerCase()) return "Client";
     return "Auditor";
   })();
 
@@ -307,11 +293,15 @@ export function NexusProvider({ children }: { children: ReactNode }) {
         switchAccount,
         userRole,
         contractState,
+        stateRaw,
+        contractConfig,
+        configRaw,
+        configError,
         loading,
+        refreshing,
         error,
+        lastFetchedAt,
         refreshState,
-        demoMode,
-        setDemoMode,
         rpcUrl,
         setRpcUrl,
         rpcStatus,

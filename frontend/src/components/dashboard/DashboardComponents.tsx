@@ -4,11 +4,10 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { useNexus } from "@/context/NexusContext";
 import { CopyButton } from "@/components/ui/CoreComponents";
-import { formatBond, formatBps } from "@/lib/formatters";
+import { formatBond, formatBps, formatTimestamp, formatUptimeBps, truncateAddress } from "@/lib/formatters";
 import { CONTRACT_ADDRESS, finalizeClaim } from "@/lib/contract";
 import {
   Search,
-  SlidersHorizontal,
   ChevronDown,
   ChevronUp,
   Plus,
@@ -18,19 +17,32 @@ import {
   AlertTriangle,
   ArrowRight,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 
 export function DashboardPortal() {
-  const { contractState, wallet, userRole, demoMode, refreshState } = useNexus();
+  const {
+    contractState,
+    contractConfig,
+    wallet,
+    userRole,
+    refreshState,
+    loading,
+    refreshing,
+    error,
+  } = useNexus();
+
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
-  const [expandedId, setExpandedId] = useState<string | null>("INC-003");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [finalizing, setFinalizing] = useState(false);
   const [finalizeSuccess, setFinalizeSuccess] = useState(false);
 
   const pending = contractState?.pending_claim as Record<string, unknown> | undefined;
   const hasPending = pending && Object.keys(pending).length > 0;
   const history = contractState?.history || [];
+  const settledCases = history.filter((h) => h.status !== "DISMISSED");
+  const dismissedCases = history.filter((h) => h.status === "DISMISSED");
 
   const isProvider = userRole === "Provider";
   const isClient = userRole === "Client";
@@ -53,17 +65,15 @@ export function DashboardPortal() {
     : "All clear";
 
   const handleFinalize = async () => {
+    if (!wallet.address) {
+      alert("Please connect your wallet first.");
+      return;
+    }
     setFinalizing(true);
     try {
-      if (demoMode) {
-        await new Promise((r) => setTimeout(r, 1000));
-        setFinalizeSuccess(true);
-      } else {
-        if (!wallet.address) throw new Error("Wallet not connected");
-        await finalizeClaim(wallet.address);
-        await refreshState();
-        setFinalizeSuccess(true);
-      }
+      await finalizeClaim(wallet.address);
+      await refreshState();
+      setFinalizeSuccess(true);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Finalize failed");
     } finally {
@@ -74,37 +84,51 @@ export function DashboardPortal() {
   // Compile real contract items
   const items = [
     // 1. Active SLA Agreement
-    {
-      id: "sla-contract-main",
-      type: "Reliability Agreement",
-      title: "API Reliability Agreement (GenLayer Studio)",
-      subtitle: `Provider ${contractState?.provider?.slice(0, 6)}... locked ${formatBond(
-        contractState?.remaining_bond || 1000000000000000000
-      )} collateral. 2 sources required.`,
-      status: "active",
-      statusLabel: "Active SLA",
-      statusColor: "purple",
-      category: "sla",
-      date: "Sep 2026",
-      metric1Label: "Locked Collateral",
-      metric1Val: formatBond(contractState?.remaining_bond || 1000000000000000000),
-      metric2Label: "SLA Target",
-      metric2Val: "99.90% Uptime",
-      metric3Label: "Quorum",
-      metric3Val: `${contractState?.quorum_required || 2} Sources`,
-      contractAddress: CONTRACT_ADDRESS,
-      href: "/sla",
-    },
+    ...(contractState
+      ? [
+          {
+            id: "sla-contract-main",
+            type: "Reliability Agreement",
+            title: "API Reliability Agreement (GenLayer Studio)",
+            subtitle: contractState.provider
+              ? `Provider ${truncateAddress(contractState.provider)} · locked ${formatBond(
+                  contractState.remaining_bond,
+                )} collateral · ${contractState.quorum_required} sources required`
+              : "Contract active on-chain",
+            status: contractState.state === "ACTIVE" ? "active" : "pending",
+            statusLabel: `State: ${contractState.state}`,
+            statusColor: contractState.state === "ACTIVE" ? "purple" : "amber",
+            category: "sla",
+            date: contractConfig?.start
+              ? new Date(contractConfig.start * 1000).toLocaleDateString("en-US", {
+                  month: "short",
+                  year: "numeric",
+                })
+              : "Active SLA",
+            metric1Label: "Locked Collateral",
+            metric1Val: formatBond(contractState.remaining_bond),
+            metric2Label: "SLA Target",
+            metric2Val:
+              contractConfig?.tier_uptime_thresholds_bps?.[0] != null
+                ? `${formatUptimeBps(contractConfig.tier_uptime_thresholds_bps[0])} Uptime`
+                : "Not available from current contract",
+            metric3Label: "Quorum",
+            metric3Val: `${contractState.quorum_required} Sources`,
+            contractAddress: CONTRACT_ADDRESS,
+            href: "/sla",
+          },
+        ]
+      : []),
     // 2. Pending Claim if any
     ...(hasPending
       ? [
           {
-            id: String(pending.incident_id || "INC-003"),
+            id: String(pending.incident_id || "pending-claim"),
             type: "Dispute Window Active",
-            title: `${String(pending.incident_id || "INC-003")}: US-East Gateway Timeout`,
+            title: `${String(pending.incident_id || "Claim Under Review")}: SLA Incident Claim`,
             subtitle: pendingDisputed
               ? "Provider submitted counter-evidence. GenLayer AI validators evaluating consensus."
-              : "AI consensus confirmed MAJOR outage. Dispute window currently open.",
+              : "AI consensus confirmed outage. Dispute window currently open.",
             status: pendingDisputed ? "disputed" : "pending",
             statusLabel: finalizeSuccess
               ? "Settled"
@@ -113,45 +137,53 @@ export function DashboardPortal() {
               : "Pending finalization",
             statusColor: finalizeSuccess ? "green" : pendingDisputed ? "blue" : "amber",
             category: "claim-pending",
-            date: "Sep 29, 2026",
+            date: pending.filed_at ? formatTimestamp(Number(pending.filed_at)) : "Pending",
             metric1Label: "Calculated Penalty",
-            metric1Val: formatBps(Number(pending.penalty_bps || 1500)),
+            metric1Val:
+              pending.penalty_bps != null ? formatBps(Number(pending.penalty_bps)) : "Not available",
             metric2Label: "Payout at Risk",
-            metric2Val: formatBond(Number(pending.payout_amount || 150000000000000000)),
+            metric2Val:
+              pending.payout_amount != null
+                ? formatBond(String(pending.payout_amount))
+                : "Not available",
             metric3Label: "Agreeing Sources",
-            metric3Val: `${pending.sources_agreeing || 2} / 2 Sources`,
+            metric3Val: `${pending.sources_agreeing ?? 0} / ${contractState?.quorum_required ?? 2} Sources`,
             contractAddress: CONTRACT_ADDRESS,
-            href: `/court/${String(pending.incident_id || "INC-003")}`,
+            href: `/court/${String(pending.incident_id || "pending")}`,
             isPendingClaim: true,
           },
         ]
       : []),
-    // 3. Claims history
+    // 3. Claims history from get_state().history
     ...history.map((h, idx) => ({
       id: h.incident_id || `case-${idx}`,
       type: h.status === "DISMISSED" ? "False Alarm Filtered" : "On-Chain Settled",
-      title: `${h.incident_id || `INC-00${idx + 1}`}: ${
-        h.status === "DISMISSED"
-          ? "Scheduled Maintenance Outage Claim"
-          : "Cloud API Global Latency Degradation"
-      }`,
+      title: h.incident_id
+        ? `${h.incident_id}${h.status === "DISMISSED" ? " (Dismissed)" : ""}`
+        : `${h.status === "DISMISSED" ? "Dismissed Claim" : "Settled Case"} #${idx + 1}`,
       subtitle:
-        h.status === "DISMISSED"
-          ? "AI Oracle examined evidence: planned maintenance excluded from SLA downtime."
+        h.reason ||
+        (h.status === "DISMISSED"
+          ? "AI Oracle examined evidence: no incident confirmed meeting quorum."
           : `Multi-model quorum agreed. Penalty of ${formatBps(
-              h.penalty_bps || 0
-            )} settled on-chain.`,
+              h.penalty_bps || 0,
+            )} settled on-chain.`),
       status: h.status === "DISMISSED" ? "dismissed" : "settled",
       statusLabel: h.status === "DISMISSED" ? "Dismissed" : "Settled",
       statusColor: h.status === "DISMISSED" ? "gray" : "green",
       category: h.status === "DISMISSED" ? "dismissed" : "settled",
-      date: "Sep 28, 2026",
+      date: h.filed_at ? formatTimestamp(h.filed_at) : "On-Chain Record",
       metric1Label: "Penalty Rate",
-      metric1Val: formatBps(h.penalty_bps || 0),
+      metric1Val: h.penalty_bps != null ? formatBps(h.penalty_bps) : "0 bps",
       metric2Label: "Financial Payout",
       metric2Val: h.payout_amount ? formatBond(h.payout_amount) : "0 GEN",
       metric3Label: "Oracle Verdict",
-      metric3Val: h.status === "DISMISSED" ? "Dismissed (0 bps)" : "Majority Agree",
+      metric3Val:
+        h.status === "DISMISSED"
+          ? "Dismissed (0 bps)"
+          : h.sources_agreeing
+          ? `${h.sources_agreeing} Sources Agree`
+          : "Majority Agree",
       contractAddress: CONTRACT_ADDRESS,
       href: `/court/${h.incident_id || `case-${idx}`}`,
     })),
@@ -191,6 +223,15 @@ export function DashboardPortal() {
         </div>
 
         <div className="flex items-center gap-2.5 self-start sm:self-auto flex-shrink-0">
+          <button
+            onClick={() => refreshState()}
+            disabled={refreshing}
+            className="btn-portal-secondary text-xs flex items-center gap-1.5"
+            title="Refresh contract state from GenLayer RPC"
+          >
+            <RefreshCw size={13} className={refreshing ? "animate-spin text-purple-600" : "text-slate-500"} />
+            <span>{refreshing ? "Syncing..." : "Sync State"}</span>
+          </button>
           <Link href="/sla/create" className="btn-portal-secondary no-underline">
             <Shield size={13} className="text-slate-500" />
             <span>Create SLA</span>
@@ -201,6 +242,16 @@ export function DashboardPortal() {
           </Link>
         </div>
       </div>
+
+      {error && (
+        <div className="mb-6 p-3 sm:p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs sm:text-sm flex items-start gap-2.5">
+          <AlertTriangle size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="font-semibold">RPC Warning / Notice:</p>
+            <p className="mt-0.5">{error}</p>
+          </div>
+        </div>
+      )}
 
       {/* 4 Stats Cards — Unified, High-End Minimalist Aesthetics */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8">
@@ -216,12 +267,20 @@ export function DashboardPortal() {
           </div>
           <div className="my-1">
             <span className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900 font-mono">
-              {formatBond(contractState?.remaining_bond || 1000000000000000000)}
+              {contractState ? formatBond(contractState.remaining_bond) : loading ? "..." : "Not available"}
             </span>
           </div>
           <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-            <span>1 Active Provider Stake</span>
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                contractState?.state === "ACTIVE" ? "bg-emerald-500" : "bg-slate-300"
+              }`}
+            />
+            <span>
+              {contractState?.state === "ACTIVE"
+                ? "Active Provider Stake"
+                : contractState?.state || (loading ? "Loading..." : "Offline")}
+            </span>
           </div>
         </div>
 
@@ -262,12 +321,14 @@ export function DashboardPortal() {
           </div>
           <div className="my-1">
             <span className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900 font-mono">
-              {history.length}
+              {settledCases.length}
             </span>
           </div>
-          <div className="text-[11px] text-emerald-600 font-medium mt-1 flex items-center gap-1.5">
+          <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1.5">
             <CheckCircle size={12} className="text-emerald-500" />
-            <span>100% On-Chain Verified</span>
+            <span>
+              {dismissedCases.length} Dismissed ({history.length} Total on-chain)
+            </span>
           </div>
         </div>
 
@@ -298,18 +359,10 @@ export function DashboardPortal() {
         <div className="inline-flex p-1 rounded-xl bg-slate-100/80 border border-slate-200/60 overflow-x-auto scrollbar-none self-start">
           {[
             { id: "all", label: "All Items", count: items.length },
-            { id: "sla", label: "Active SLA", count: 1 },
+            { id: "sla", label: "Active SLA", count: contractState?.state === "ACTIVE" ? 1 : 0 },
             { id: "pending", label: "Pending Review", count: hasPending ? 1 : 0 },
-            {
-              id: "settled",
-              label: "Settled",
-              count: history.filter((h) => h.status !== "DISMISSED").length,
-            },
-            {
-              id: "dismissed",
-              label: "Dismissed",
-              count: history.filter((h) => h.status === "DISMISSED").length,
-            },
+            { id: "settled", label: "Settled", count: settledCases.length },
+            { id: "dismissed", label: "Dismissed", count: dismissedCases.length },
           ].map((item) => {
             const active = filter === item.id;
             return (
@@ -359,225 +412,231 @@ export function DashboardPortal() {
 
       {/* Cards List */}
       <div className="space-y-3.5">
-        {filteredItems.map((item) => {
-          const isExpanded = expandedId === item.id;
+        {filteredItems.length === 0 ? (
+          <div className="p-8 text-center bg-white rounded-xl border border-slate-200 text-slate-400 text-xs">
+            {loading ? "Reading live contract state from GenLayer RPC..." : "No items match current filter."}
+          </div>
+        ) : (
+          filteredItems.map((item) => {
+            const isExpanded = expandedId === item.id;
 
-          return (
-            <div
-              key={item.id}
-              className="bg-white border border-slate-200/90 rounded-xl shadow-xs hover:border-slate-300 transition-all overflow-hidden"
-            >
-              <div className="p-4 sm:p-5">
-                {/* Top Row: Category + Title + Status Pill */}
-                <div className="flex items-start justify-between gap-3 mb-2.5">
-                  <div className="flex items-start gap-3 min-w-0">
-                    {/* Category Square Icon */}
-                    <div
-                      className={`w-9 h-9 rounded-lg text-white flex items-center justify-center flex-shrink-0 shadow-2xs ${
-                        item.category === "sla"
-                          ? "bg-slate-900"
-                          : item.statusColor === "amber"
-                          ? "bg-amber-600"
-                          : item.statusColor === "green"
-                          ? "bg-emerald-600"
-                          : "bg-slate-600"
-                      }`}
-                    >
-                      {item.category === "sla" ? <Shield size={16} /> : <Scale size={16} />}
-                    </div>
-
-                    <div className="min-w-0">
-                      <div className="text-[11px] font-mono text-slate-400 mb-0.5">
-                        {item.type}
-                      </div>
-                      <Link
-                        href={item.href}
-                        className="text-sm sm:text-base font-semibold text-slate-900 hover:text-purple-600 transition-colors no-underline block leading-snug break-words"
-                      >
-                        {item.title}
-                      </Link>
-                    </div>
-                  </div>
-
-                  {/* Status Pill */}
-                  <div className="flex-shrink-0">
-                    <span
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
-                        item.statusColor === "amber"
-                          ? "bg-amber-50 text-amber-800 border-amber-200"
-                          : item.statusColor === "green"
-                          ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                          : item.statusColor === "purple"
-                          ? "bg-purple-50 text-purple-800 border-purple-200"
-                          : item.statusColor === "blue"
-                          ? "bg-blue-50 text-blue-800 border-blue-200"
-                          : "bg-slate-50 text-slate-700 border-slate-200"
-                      }`}
-                    >
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full ${
-                          item.statusColor === "amber"
+            return (
+              <div
+                key={item.id}
+                className="bg-white border border-slate-200/90 rounded-xl shadow-xs hover:border-slate-300 transition-all overflow-hidden"
+              >
+                <div className="p-4 sm:p-5">
+                  {/* Top Row: Category + Title + Status Pill */}
+                  <div className="flex items-start justify-between gap-3 mb-2.5">
+                    <div className="flex items-start gap-3 min-w-0">
+                      {/* Category Square Icon */}
+                      <div
+                        className={`w-9 h-9 rounded-lg text-white flex items-center justify-center flex-shrink-0 shadow-2xs ${
+                          item.category === "sla"
+                            ? "bg-slate-900"
+                            : item.statusColor === "amber"
                             ? "bg-amber-600"
                             : item.statusColor === "green"
                             ? "bg-emerald-600"
-                            : item.statusColor === "purple"
-                            ? "bg-purple-600"
-                            : item.statusColor === "blue"
-                            ? "bg-blue-600"
-                            : "bg-slate-500"
+                            : "bg-slate-600"
                         }`}
-                      />
-                      {item.statusLabel}
-                    </span>
+                      >
+                        {item.category === "sla" ? <Shield size={16} /> : <Scale size={16} />}
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-mono text-slate-400 mb-0.5">
+                          {item.type}
+                        </div>
+                        <Link
+                          href={item.href}
+                          className="text-sm sm:text-base font-semibold text-slate-900 hover:text-purple-600 transition-colors no-underline block leading-snug break-words"
+                        >
+                          {item.title}
+                        </Link>
+                      </div>
+                    </div>
+
+                    {/* Status Pill */}
+                    <div className="flex-shrink-0">
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
+                          item.statusColor === "amber"
+                            ? "bg-amber-50 text-amber-800 border-amber-200"
+                            : item.statusColor === "green"
+                            ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                            : item.statusColor === "purple"
+                            ? "bg-purple-50 text-purple-800 border-purple-200"
+                            : item.statusColor === "blue"
+                            ? "bg-blue-50 text-blue-800 border-blue-200"
+                            : "bg-slate-50 text-slate-700 border-slate-200"
+                        }`}
+                      >
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            item.statusColor === "amber"
+                              ? "bg-amber-600"
+                              : item.statusColor === "green"
+                              ? "bg-emerald-600"
+                              : item.statusColor === "blue"
+                              ? "bg-blue-600"
+                              : "bg-slate-400"
+                          }`}
+                        />
+                        {item.statusLabel}
+                      </span>
+                    </div>
                   </div>
-                </div>
 
-                {/* Subtitle */}
-                <p className="text-xs text-slate-500 mb-3.5 leading-relaxed">
-                  {item.subtitle}
-                </p>
+                  {/* Subtitle */}
+                  <p className="text-xs text-slate-500 mb-3.5 leading-relaxed">
+                    {item.subtitle}
+                  </p>
 
-                {/* Metadata Boxes Row (Responsive Grid with clean hairline borders) */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mb-3.5">
-                  <div className="bg-slate-50/70 border border-slate-100 rounded-lg p-2.5">
-                    <div className="text-[10px] text-slate-400 font-medium mb-0.5">
-                      {item.metric1Label}
+                  {/* Metadata Boxes Row */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mb-3.5">
+                    <div className="bg-slate-50/70 border border-slate-100 rounded-lg p-2.5">
+                      <div className="text-[10px] text-slate-400 font-medium mb-0.5">
+                        {item.metric1Label}
+                      </div>
+                      <div className="text-xs sm:text-sm font-semibold text-slate-900 font-mono truncate">
+                        {item.metric1Val}
+                      </div>
                     </div>
-                    <div className="text-xs sm:text-sm font-semibold text-slate-900 font-mono truncate">
-                      {item.metric1Val}
+
+                    <div className="bg-slate-50/70 border border-slate-100 rounded-lg p-2.5">
+                      <div className="text-[10px] text-slate-400 font-medium mb-0.5">
+                        {item.metric2Label}
+                      </div>
+                      <div className="text-xs sm:text-sm font-semibold text-slate-900 font-mono truncate">
+                        {item.metric2Val}
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-50/70 border border-slate-100 rounded-lg p-2.5 col-span-2 sm:col-span-1">
+                      <div className="text-[10px] text-slate-400 font-medium mb-0.5">
+                        {item.metric3Label}
+                      </div>
+                      <div className="text-xs sm:text-sm font-semibold text-slate-900 truncate">
+                        {item.metric3Val}
+                      </div>
                     </div>
                   </div>
 
-                  <div className="bg-slate-50/70 border border-slate-100 rounded-lg p-2.5">
-                    <div className="text-[10px] text-slate-400 font-medium mb-0.5">
-                      {item.metric2Label}
-                    </div>
-                    <div className="text-xs sm:text-sm font-semibold text-slate-900 font-mono truncate">
-                      {item.metric2Val}
-                    </div>
-                  </div>
+                  {/* Action Row for Pending Claim */}
+                  {item.isPendingClaim && (
+                    <div className="p-2.5 sm:p-3 bg-amber-50/80 border border-amber-200 rounded-xl mb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-1.5 text-amber-900 font-medium text-[11px] sm:text-xs">
+                        <AlertTriangle size={14} className="text-amber-600 flex-shrink-0" />
+                        <span>Dispute window active. Provider can counter-dispute or client can finalize.</span>
+                      </div>
 
-                  <div className="bg-slate-50/70 border border-slate-100 rounded-lg p-2.5 col-span-2 sm:col-span-1">
-                    <div className="text-[10px] text-slate-400 font-medium mb-0.5">
-                      {item.metric3Label}
+                      <div className="flex items-center gap-1.5 self-start sm:self-auto flex-wrap">
+                        <Link
+                          href={`/claims/${item.id}/dispute`}
+                          className="btn-portal-secondary text-xs no-underline font-medium"
+                        >
+                          <Scale size={12} />
+                          <span>Dispute</span>
+                        </Link>
+                        <button
+                          onClick={handleFinalize}
+                          disabled={finalizing || finalizeSuccess}
+                          className="btn-portal-primary text-xs"
+                        >
+                          {finalizing ? (
+                            <>
+                              <Loader2 size={12} className="animate-spin" />
+                              <span>Finalizing...</span>
+                            </>
+                          ) : finalizeSuccess ? (
+                            <>
+                              <CheckCircle size={12} />
+                              <span>Settled</span>
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle size={12} />
+                              <span>Finalize</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
-                    <div className="text-xs sm:text-sm font-semibold text-slate-900 truncate">
-                      {item.metric3Val}
-                    </div>
-                  </div>
-                </div>
+                  )}
 
-                {/* Action Row for Pending Claim */}
-                {item.isPendingClaim && (
-                  <div className="p-2.5 sm:p-3 bg-amber-50/80 border border-amber-200 rounded-xl mb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                    <div className="flex items-center gap-1.5 text-amber-900 font-medium text-[11px] sm:text-xs">
-                      <AlertTriangle size={14} className="text-amber-600 flex-shrink-0" />
-                      <span>Dispute window active. Provider can counter-dispute or client can finalize.</span>
+                  {/* Footer with Contract ID + Expandable View */}
+                  <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-100 text-xs">
+                    <div className="flex items-center gap-1.5 text-slate-500 font-mono text-[11px]">
+                      <span className="text-slate-400">Contract</span>
+                      <span className="font-semibold text-slate-700">
+                        {CONTRACT_ADDRESS ? truncateAddress(CONTRACT_ADDRESS) : "Not configured"}
+                      </span>
+                      {CONTRACT_ADDRESS && <CopyButton text={CONTRACT_ADDRESS} />}
                     </div>
 
-                    <div className="flex items-center gap-1.5 self-start sm:self-auto flex-wrap">
+                    <div className="flex items-center gap-3">
                       <Link
-                        href={`/claims/${item.id}/dispute`}
-                        className="btn-portal-secondary text-xs no-underline font-medium"
+                        href={item.href}
+                        className="text-slate-900 hover:text-purple-600 font-medium no-underline flex items-center gap-1 text-xs transition-colors"
                       >
-                        <Scale size={12} />
-                        <span>Dispute</span>
+                        <span>Case Details</span> <ArrowRight size={11} />
                       </Link>
+
                       <button
-                        onClick={handleFinalize}
-                        disabled={finalizing || finalizeSuccess}
-                        className="btn-portal-primary text-xs"
+                        onClick={() => setExpandedId(isExpanded ? null : item.id)}
+                        className="flex items-center gap-1 text-slate-500 hover:text-slate-800 font-medium border-none bg-transparent cursor-pointer text-xs transition-colors"
                       >
-                        {finalizing ? (
-                          <>
-                            <Loader2 size={12} className="animate-spin" />
-                            <span>Finalizing...</span>
-                          </>
-                        ) : finalizeSuccess ? (
-                          <>
-                            <CheckCircle size={12} />
-                            <span>Settled</span>
-                          </>
-                        ) : (
-                          <>
-                            <CheckCircle size={12} />
-                            <span>Finalize</span>
-                          </>
-                        )}
+                        <span>{isExpanded ? "Less" : "Metadata"}</span>
+                        {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                       </button>
                     </div>
                   </div>
-                )}
 
-                {/* Footer with Contract ID + Expandable View */}
-                <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-100 text-xs">
-                  <div className="flex items-center gap-1.5 text-slate-500 font-mono text-[11px]">
-                    <span className="text-slate-400">Contract</span>
-                    <span className="font-semibold text-slate-700">{CONTRACT_ADDRESS.slice(0, 6)}...{CONTRACT_ADDRESS.slice(-4)}</span>
-                    <CopyButton text={CONTRACT_ADDRESS} />
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <Link
-                      href={item.href}
-                      className="text-slate-900 hover:text-purple-600 font-medium no-underline flex items-center gap-1 text-xs transition-colors"
-                    >
-                      <span>Case Details</span> <ArrowRight size={11} />
-                    </Link>
-
-                    <button
-                      onClick={() => setExpandedId(isExpanded ? null : item.id)}
-                      className="flex items-center gap-1 text-slate-500 hover:text-slate-800 font-medium border-none bg-transparent cursor-pointer text-xs transition-colors"
-                    >
-                      <span>{isExpanded ? "Less" : "Metadata"}</span>
-                      {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Expanded Details Drawer */}
-                {isExpanded && (
-                  <div className="mt-2.5 pt-2.5 border-t border-slate-100 text-xs bg-slate-50 p-2.5 sm:p-3 rounded-lg sm:rounded-xl space-y-2">
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      <div>
-                        <span className="text-slate-400 block text-[9px] uppercase font-bold">
-                          Provider
-                        </span>
-                        <span className="mono font-semibold text-slate-800 text-[10px] sm:text-[11px] truncate block">
-                          {contractState?.provider?.slice(0, 10)}...
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block text-[9px] uppercase font-bold">
-                          Client
-                        </span>
-                        <span className="mono font-semibold text-slate-800 text-[10px] sm:text-[11px] truncate block">
-                          {contractState?.client?.slice(0, 10)}...
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block text-[9px] uppercase font-bold">
-                          Consensus
-                        </span>
-                        <span className="font-semibold text-purple-700 text-[10px] sm:text-[11px] truncate block">
-                          prompt_comparative
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block text-[9px] uppercase font-bold">
-                          Settlement
-                        </span>
-                        <span className="font-semibold text-emerald-600 text-[10px] sm:text-[11px] truncate block">
-                          Deterministic Slash
-                        </span>
+                  {/* Expanded Details Drawer */}
+                  {isExpanded && (
+                    <div className="mt-2.5 pt-2.5 border-t border-slate-100 text-xs bg-slate-50 p-2.5 sm:p-3 rounded-lg sm:rounded-xl space-y-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <div>
+                          <span className="text-slate-400 block text-[9px] uppercase font-bold">
+                            Provider
+                          </span>
+                          <span className="mono font-semibold text-slate-800 text-[10px] sm:text-[11px] truncate block">
+                            {contractState?.provider ? truncateAddress(contractState.provider) : "—"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[9px] uppercase font-bold">
+                            Client
+                          </span>
+                          <span className="mono font-semibold text-slate-800 text-[10px] sm:text-[11px] truncate block">
+                            {contractState?.client ? truncateAddress(contractState.client) : "—"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[9px] uppercase font-bold">
+                            Consensus
+                          </span>
+                          <span className="font-semibold text-purple-700 text-[10px] sm:text-[11px] truncate block">
+                            prompt_comparative
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[9px] uppercase font-bold">
+                            Evidence Domains
+                          </span>
+                          <span className="font-semibold text-emerald-600 text-[10px] sm:text-[11px] truncate block">
+                            {contractConfig?.evidence_domains?.join(", ") || "—"}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
     </div>
   );

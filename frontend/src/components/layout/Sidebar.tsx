@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { GenLayerLogo } from "@/components/ui/CoreComponents";
 import { useNexus } from "@/context/NexusContext";
 import { useLayout } from "@/context/LayoutContext";
+import { truncateAddress } from "@/lib/formatters";
 import { CONTRACT_ADDRESS } from "@/lib/contract";
 import { ConnectWalletModal } from "@/components/ui/ConnectWalletModal";
 import {
@@ -18,14 +19,23 @@ import {
   FileWarning,
   ChevronLeft,
   ChevronRight,
-  Sparkles,
+  Activity,
   X,
   BookOpen,
 } from "lucide-react";
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { userRole, contractState, demoMode, setDemoMode, wallet } = useNexus();
+  const {
+    userRole,
+    contractState,
+    wallet,
+    rpcStatus,
+    refreshing,
+    refreshState,
+    disconnectWallet,
+    switchAccount,
+  } = useNexus();
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const {
     isMobileNavOpen,
@@ -41,7 +51,12 @@ export function Sidebar() {
 
   const protocolLinks = [
     { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-    { label: "SLA Contracts", href: "/sla", icon: Shield, badge: "1 Active" },
+    {
+      label: "SLA Contracts",
+      href: "/sla",
+      icon: Shield,
+      badge: contractState?.state === "ACTIVE" ? "1 Active" : contractState?.state,
+    },
     {
       label: "Court Adjudications",
       href: "/court",
@@ -52,7 +67,7 @@ export function Sidebar() {
       label: "Claims & History",
       href: "/claims",
       icon: FileText,
-      count: contractState?.history?.length || 2,
+      count: contractState?.history?.length ?? 0,
     },
     { label: "Contract Explorer", href: "/explorer", icon: Search },
     { label: "Documentation", href: "/docs", icon: BookOpen },
@@ -157,11 +172,49 @@ export function Sidebar() {
                     Connect
                   </button>
                 ) : (
-                  <span className="text-[10px] font-mono text-slate-400">
-                    {wallet.address?.slice(0, 6)}...
-                  </span>
+                  <button
+                    onClick={disconnectWallet}
+                    className="text-[10px] text-slate-400 hover:text-rose-600 transition-colors bg-transparent border-none cursor-pointer p-0"
+                    title="Disconnect wallet"
+                  >
+                    Disconnect
+                  </button>
                 )}
               </div>
+              {wallet.connected && wallet.address && (
+                <div className="mt-1 pt-1.5 border-t border-purple-100/80">
+                  <div className="text-[10px] font-mono text-slate-500 truncate mb-1.5" title={wallet.address}>
+                    {truncateAddress(wallet.address, 6, 4)}
+                  </div>
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="text-slate-400">Test role:</span>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => switchAccount("provider")}
+                        className={`px-1.5 py-0.5 rounded text-[9px] font-semibold transition-all border ${
+                          userRole === "Provider"
+                            ? "bg-purple-600 text-white border-purple-600"
+                            : "bg-white text-slate-600 hover:bg-slate-50 border-slate-200"
+                        }`}
+                        title="Simulate actions as designated Provider"
+                      >
+                        Provider
+                      </button>
+                      <button
+                        onClick={() => switchAccount("client")}
+                        className={`px-1.5 py-0.5 rounded text-[9px] font-semibold transition-all border ${
+                          userRole === "Client"
+                            ? "bg-purple-600 text-white border-purple-600"
+                            : "bg-white text-slate-600 hover:bg-slate-50 border-slate-200"
+                        }`}
+                        title="Simulate actions as designated Client"
+                      >
+                        Client
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -252,30 +305,40 @@ export function Sidebar() {
               <div className="text-[9px] font-bold uppercase text-slate-400">
                 Intelligent Contract
               </div>
-              <div className="mono font-semibold text-slate-700 truncate">
-                {CONTRACT_ADDRESS.slice(0, 14)}...
+              <div
+                className="mono font-semibold text-slate-700 truncate"
+                title={CONTRACT_ADDRESS || undefined}
+              >
+                {CONTRACT_ADDRESS ? truncateAddress(CONTRACT_ADDRESS, 8, 6) : "Not configured"}
               </div>
             </div>
           )}
 
-          {/* Mode Toggle Button */}
-          <button
-            onClick={() => setDemoMode(!demoMode)}
-            className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-[12px] font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors border-none cursor-pointer"
-            title="Toggle Simulation / Live Mode"
+          {/* Live RPC Status */}
+          <div
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-[12px] font-medium text-slate-700 bg-slate-100"
+            title={rpcStatus?.url || "GenLayer RPC"}
           >
             <div className="flex items-center gap-2">
-              <Sparkles size={14} className={demoMode ? "text-amber-500" : "text-purple-600"} />
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  rpcStatus?.connected
+                    ? "bg-emerald-500 shadow-[0_0_0_2px_rgba(16,185,129,0.2)]"
+                    : "bg-amber-400"
+                }`}
+              />
               {(!isDesktopCollapsed || isMobileNavOpen) && (
-                <span>{demoMode ? "Demo State" : "Live RPC"}</span>
+                <span className="text-[11px]">
+                  {rpcStatus?.connected ? "Live RPC" : "RPC Connecting"}
+                </span>
               )}
             </div>
             {(!isDesktopCollapsed || isMobileNavOpen) && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-white font-bold text-slate-700 shadow-sm">
-                {demoMode ? "SIM" : "RPC"}
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-white font-mono font-bold text-slate-700 shadow-2xs">
+                {rpcStatus?.latencyMs != null ? `${rpcStatus.latencyMs}ms` : "Studionet"}
               </span>
             )}
-          </button>
+          </div>
         </div>
       </aside>
 

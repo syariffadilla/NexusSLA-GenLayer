@@ -1,8 +1,9 @@
-﻿"use client";
+"use client";
 
 import React from "react";
+import { useNexus } from "@/context/NexusContext";
 import { StatusBadge, AddressDisplay } from "@/components/ui/CoreComponents";
-import { formatBond, formatBps, formatDuration, formatTimestamp } from "@/lib/formatters";
+import { formatBond, formatBps, formatDuration, formatTimestamp, formatUptimeBps } from "@/lib/formatters";
 import {
   CheckCircle,
   Clock,
@@ -18,6 +19,7 @@ import type { ClaimHistoryEntry } from "@/types/nexus-sla";
 /* --- Case Summary -------------------------------------------------- */
 
 export function CaseSummary({ claim }: { claim: ClaimHistoryEntry }) {
+  const { contractState } = useNexus();
   const isDismissed = claim.status === "DISMISSED";
 
   return (
@@ -64,7 +66,7 @@ export function CaseSummary({ claim }: { claim: ClaimHistoryEntry }) {
           <div>
             <div className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>Sources</div>
             <span className="text-sm" style={{ color: "var(--text-primary)" }}>
-              {claim.sources_agreeing || 0} / {claim.sources_agreeing || 0}
+              {claim.sources_agreeing ?? 0} / {contractState?.quorum_required ?? "?"}
             </span>
           </div>
           <div>
@@ -94,16 +96,21 @@ export function CaseSummary({ claim }: { claim: ClaimHistoryEntry }) {
 /* --- Penalty Engine Visualization ---------------------------------- */
 
 export function PenaltyEngine({ claim }: { claim: ClaimHistoryEntry }) {
+  const { contractConfig } = useNexus();
   if (!claim.duration_minutes || !claim.penalty_bps) return null;
 
   // Reverse-engineer uptime from penalty
   const estimatedUptime = 100 - (claim.penalty_bps / 100);
   const bondImpact = claim.payout_amount ? formatBond(claim.payout_amount) : "0 GEN";
 
+  const thresholdBps = contractConfig?.tier_uptime_thresholds_bps?.[0];
+  const thresholdLabel =
+    thresholdBps != null ? `≤ ${formatUptimeBps(thresholdBps)}` : "Configured on-chain";
+
   const steps = [
     { label: "DOWNTIME", value: formatDuration(claim.duration_minutes), icon: <Clock size={16} /> },
     { label: "UPTIME CALCULATION", value: `${estimatedUptime.toFixed(2)}%`, icon: <Activity size={16} /> },
-    { label: "THRESHOLD", value: `≤ 99.90%`, icon: <AlertTriangle size={16} /> },
+    { label: "THRESHOLD", value: thresholdLabel, icon: <AlertTriangle size={16} /> },
     { label: "PENALTY", value: formatBps(claim.penalty_bps), icon: <Shield size={16} /> },
     { label: "BOND IMPACT", value: bondImpact, icon: <Coins size={16} /> },
   ];

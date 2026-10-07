@@ -1,4 +1,4 @@
-﻿// --- Contract Types ----------------------------------------------------------
+// --- Contract Types ----------------------------------------------------------
 
 export type ContractState =
   | "UNINITIALIZED"
@@ -22,7 +22,8 @@ export interface PendingClaim {
   impact: ImpactLevel;
   duration_minutes: number;
   penalty_bps: number;
-  payout_amount: number;
+  /** wei, exact decimal string */
+  payout_amount: string;
   sources_agreeing: number;
   disputed: boolean;
   finalized: boolean;
@@ -34,7 +35,8 @@ export interface ClaimHistoryEntry {
   impact?: ImpactLevel;
   duration_minutes?: number;
   penalty_bps?: number;
-  payout_amount?: number;
+  /** wei, exact decimal string */
+  payout_amount?: string;
   sources_agreeing?: number;
   disputed?: boolean;
   finalized?: boolean;
@@ -47,10 +49,22 @@ export interface ContractGetState {
   state: ContractState;
   provider: string;
   client: string;
-  remaining_bond: number;
+  /** wei, exact decimal string */
+  remaining_bond: string;
   quorum_required: number;
   pending_claim: PendingClaim | Record<string, never>;
   history: ClaimHistoryEntry[];
+}
+
+/** Exact shape returned by get_config(). */
+export interface ContractConfig {
+  /** wei, exact decimal string */
+  bond_amount: string;
+  start: number;
+  end: number;
+  evidence_domains: string[];
+  tier_uptime_thresholds_bps: number[];
+  tier_penalty_bps: number[];
 }
 
 // --- UI Types ----------------------------------------------------------------
@@ -82,19 +96,4 @@ export interface WalletState {
   connected: boolean;
   address: string | null;
   connecting: boolean;
-}
-
-// --- Court Case Display ------------------------------------------------------
-
-export interface CourtCaseDisplay {
-  incidentId: string;
-  impact: string;
-  decision: string;
-  penaltyBps: number;
-  payoutAmount: number;
-  status: ClaimStatus;
-  durationMinutes?: number;
-  sourcesAgreeing?: number;
-  disputed?: boolean;
-  filedAt?: number;
 }

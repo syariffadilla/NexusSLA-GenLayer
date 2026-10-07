@@ -1,21 +1,42 @@
-﻿// --- Formatting Utilities for NexusSLA ---------------------------------------
+// --- Formatting Utilities for NexusSLA ---------------------------------------
 
 /**
  * Truncate wallet/contract address for display.
- * e.g. 0x006a4d15EC51F5cb1F7721A291429181db8D3519 → 0x006a...3519
+ * e.g. 0xABCDEF0123456789ABCDEF0123456789ABCDEF01 → 0xABCD...EF01
  */
 export function truncateAddress(address: string, start = 6, end = 4): string {
   if (!address || address.length < start + end + 3) return address;
   return `${address.slice(0, start)}...${address.slice(-end)}`;
 }
 
+export const NOT_AVAILABLE = "Not available";
+
 /**
- * Format wei to GEN with decimal places.
- * 1 GEN = 1e18 wei
+ * Format a wei amount (exact decimal string / bigint) as GEN.
+ * Divides by 10^18 using BigInt so no precision is lost. Shows at least
+ * `minDecimals` and at most `maxDecimals` fractional digits (truncated, never
+ * rounded up). Returns "Not available" for missing/invalid input — never a guess.
  */
-export function formatBond(weiAmount: number, decimals = 2): string {
-  const gen = weiAmount / 1e18;
-  return `${gen.toFixed(decimals)} GEN`;
+export function formatBond(
+  wei: string | bigint | number | null | undefined,
+  minDecimals = 2,
+  maxDecimals = 6,
+): string {
+  if (wei === null || wei === undefined || wei === "") return NOT_AVAILABLE;
+  let w: bigint;
+  try {
+    w = typeof wei === "bigint" ? wei : BigInt(typeof wei === "number" ? Math.trunc(wei) : wei);
+  } catch {
+    return NOT_AVAILABLE;
+  }
+  const negative = w < BigInt(0);
+  if (negative) w = -w;
+  const base = BigInt("1000000000000000000");
+  const whole = w / base;
+  let frac = (w % base).toString().padStart(18, "0").slice(0, maxDecimals);
+  frac = frac.replace(/0+$/, "");
+  if (frac.length < minDecimals) frac = frac.padEnd(minDecimals, "0");
+  return `${negative ? "-" : ""}${whole.toString()}${frac ? "." + frac : ""} GEN`;
 }
 
 /**

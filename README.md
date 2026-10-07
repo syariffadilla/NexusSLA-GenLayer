@@ -57,7 +57,7 @@ NexusSLA is an Intelligent Contract protocol and decentralized court built nativ
 
 | Parameter | Value |
 | :--- | :--- |
-| **Contract Address** | `0x006a4d15EC51F5cb1F7721A291429181db8D3519` |
+| **Contract Address** | `0x96E70825E4F4b3dB44E018Dd7e99433dBF458FFb` |
 | **Network** | GenLayer Studio / Testnet |
 | **Execution Mode** | Normal (Full Consensus) |
 | **Sample Claim Tx** | `0x69da8b82fbed59b0c2623e2c619db17cde6e1eb415665c3c9564e4428f085f17` |

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useNexus } from "@/context/NexusContext";
 import { StatusBadge, AddressDisplay, EmptyState } from "@/components/ui/CoreComponents";
 import { formatBond } from "@/lib/formatters";
-import { depositBond, withdrawRemainingBond } from "@/lib/contract";
+import { CONTRACT_ADDRESS, depositBond, withdrawRemainingBond } from "@/lib/contract";
 import {
   Plus,
   Shield,
@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 
 export default function SLAPage() {
-  const { contractState, loading, demoMode, wallet, refreshState } = useNexus();
+  const { contractState, loading, wallet, refreshState } = useNexus();
 
   const [depositOpen, setDepositOpen] = useState(false);
   const [depositAmount, setDepositAmount] = useState("1.00");
@@ -32,20 +32,16 @@ export default function SLAPage() {
     setActionSuccess(null);
 
     try {
-      if (demoMode) {
-        await new Promise((r) => setTimeout(r, 1200));
-        setActionSuccess(`Deposited ${depositAmount} GEN collateral into SLA contract.`);
-        setDepositOpen(false);
-      } else {
-        if (!wallet.connected || !wallet.address) {
-          throw new Error("Wallet not connected. Connect provider wallet first.");
-        }
-        const wei = Math.floor(parseFloat(depositAmount) * 1e18);
-        await depositBond(wallet.address, wei);
-        await refreshState();
-        setActionSuccess(`Successfully deposited ${depositAmount} GEN bond.`);
-        setDepositOpen(false);
+      if (!wallet.connected || !wallet.address) {
+        throw new Error("Wallet not connected. Connect provider wallet first.");
       }
+      const num = parseFloat(depositAmount);
+      if (isNaN(num) || num <= 0) throw new Error("Please enter a valid deposit amount");
+      const wei = (BigInt(Math.round(num * 1e9)) * BigInt(1e9)).toString();
+      await depositBond(wallet.address, wei);
+      await refreshState();
+      setActionSuccess(`Successfully deposited ${depositAmount} GEN bond.`);
+      setDepositOpen(false);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Deposit failed");
     } finally {
@@ -60,17 +56,12 @@ export default function SLAPage() {
     setActionSuccess(null);
 
     try {
-      if (demoMode) {
-        await new Promise((r) => setTimeout(r, 1200));
-        setActionSuccess("Withdrawal simulated successfully.");
-      } else {
-        if (!wallet.connected || !wallet.address) {
-          throw new Error("Wallet not connected. Connect provider wallet first.");
-        }
-        await withdrawRemainingBond(wallet.address);
-        await refreshState();
-        setActionSuccess("Remaining bond withdrawn to provider wallet.");
+      if (!wallet.connected || !wallet.address) {
+        throw new Error("Wallet not connected. Connect provider wallet first.");
       }
+      await withdrawRemainingBond(wallet.address);
+      await refreshState();
+      setActionSuccess("Remaining bond withdrawn to provider wallet.");
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Withdrawal failed");
     } finally {
@@ -153,14 +144,11 @@ export default function SLAPage() {
                     API Reliability Agreement
                   </h3>
                   <div className="mono text-xs text-slate-400 mt-0.5">
-                    0x006a4d15EC51F5cb1F7721A291429181db8D3519
+                    {CONTRACT_ADDRESS}
                   </div>
                 </div>
               </div>
               <div className="flex items-center gap-2 self-start sm:self-auto">
-                {demoMode && (
-                  <span className="badge-demo text-[10px] px-2 py-0.5 rounded-full">DEMO</span>
-                )}
                 <StatusBadge status={contractState.state} />
               </div>
             </div>

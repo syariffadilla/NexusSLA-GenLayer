@@ -25,7 +25,7 @@ import {
 export default function CourtCaseDetail() {
   const params = useParams();
   const incidentId = params.incidentId as string;
-  const { contractState, loading, wallet, demoMode, refreshState } = useNexus();
+  const { contractState, loading, wallet, refreshState } = useNexus();
 
   const [finalizing, setFinalizing] = useState(false);
   const [finalizeSuccess, setFinalizeSuccess] = useState(false);
@@ -48,7 +48,11 @@ export default function CourtCaseDetail() {
   let claim: ClaimHistoryEntry | null = null;
   const pending = contractState.pending_claim as Record<string, unknown> | undefined;
 
-  if (pending && Object.keys(pending).length > 0 && pending.incident_id === incidentId) {
+  if (
+    pending &&
+    Object.keys(pending).length > 0 &&
+    String(pending.incident_id || "").toLowerCase() === incidentId.toLowerCase()
+  ) {
     const rawImpact = String(pending.impact || "major").toLowerCase();
     const impactLevel: "major" | "minor" | "none" =
       rawImpact === "minor" ? "minor" : rawImpact === "none" ? "none" : "major";
@@ -56,17 +60,16 @@ export default function CourtCaseDetail() {
     claim = {
       incident_id: String(pending.incident_id || incidentId),
       impact: impactLevel,
-      penalty_bps: Number(pending.penalty_bps || 0),
-      payout_amount: Number(pending.payout_amount || 0),
-      sources_agreeing: Number(pending.sources_agreeing || 2),
+      penalty_bps: Number(pending.penalty_bps ?? 0),
+      payout_amount: String(pending.payout_amount ?? "0"),
+      sources_agreeing: Number(pending.sources_agreeing ?? 0),
       disputed: Boolean(pending.disputed),
       finalized: Boolean(pending.finalized),
-      filed_at: Number(pending.filed_at || Date.now() / 1000),
-      duration_minutes: Number(pending.duration_minutes || 45),
-      evidence_provided: [
-        "https://githubstatus.com/incidents/api-latency-spike",
-        "https://status.cloud.google.com/incidents/region-us-central",
-      ],
+      filed_at: pending.filed_at ? Number(pending.filed_at) : undefined,
+      duration_minutes: pending.duration_minutes ? Number(pending.duration_minutes) : undefined,
+      evidence_provided: Array.isArray(pending.evidence_provided)
+        ? (pending.evidence_provided as string[])
+        : [],
     };
   }
 
@@ -82,17 +85,12 @@ export default function CourtCaseDetail() {
     setFinalizing(true);
     setActionError(null);
     try {
-      if (demoMode) {
-        await new Promise((r) => setTimeout(r, 1500));
-        setFinalizeSuccess(true);
-      } else {
-        if (!wallet.connected || !wallet.address) {
-          throw new Error("Wallet not connected");
-        }
-        await finalizeClaim(wallet.address);
-        await refreshState();
-        setFinalizeSuccess(true);
+      if (!wallet.connected || !wallet.address) {
+        throw new Error("Wallet not connected");
       }
+      await finalizeClaim(wallet.address);
+      await refreshState();
+      setFinalizeSuccess(true);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Failed to finalize claim");
     } finally {

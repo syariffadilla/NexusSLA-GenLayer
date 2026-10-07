@@ -58,7 +58,7 @@ export default function CourtPage() {
           {/* Active Pending Claim Card */}
           {hasPending && (
             <Link
-              href={`/court/${String(pending.incident_id || "INC-003")}`}
+              href={`/court/${String(pending.incident_id || "pending")}`}
               className="block bg-white border border-[#E2E8F0] border-l-4 border-l-amber-500 rounded-2xl p-4 sm:p-6 shadow-sm hover:shadow-md transition-all no-underline group"
             >
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-4">
@@ -71,7 +71,7 @@ export default function CourtPage() {
                       Active Dispute Window
                     </span>
                     <h3 className="text-base sm:text-lg font-bold text-slate-900 group-hover:text-purple-600 transition-colors">
-                      {String(pending.incident_id || "INC-003")}: US-East Edge Gateway Timeout
+                      {String(pending.incident_id || "Pending Claim")}: SLA Incident Claim
                     </h3>
                   </div>
                 </div>
@@ -85,19 +85,19 @@ export default function CourtPage() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 <div className="bg-[#F8FAFC] border border-[#F1F5F9] rounded-xl p-3">
                   <div className="text-[10px] text-slate-400 uppercase font-bold mb-0.5">Impact</div>
-                  <div className="text-xs font-bold text-red-600 uppercase">{String(pending.impact || "MAJOR")}</div>
+                  <div className="text-xs font-bold text-red-600 uppercase">{String(pending.impact || "N/A")}</div>
                 </div>
                 <div className="bg-[#F8FAFC] border border-[#F1F5F9] rounded-xl p-3">
                   <div className="text-[10px] text-slate-400 uppercase font-bold mb-0.5">Duration</div>
-                  <div className="text-xs font-bold text-slate-800 mono">{formatDuration(Number(pending.duration_minutes || 47))}</div>
+                  <div className="text-xs font-bold text-slate-800 mono">{pending.duration_minutes != null ? formatDuration(Number(pending.duration_minutes)) : "—"}</div>
                 </div>
                 <div className="bg-[#F8FAFC] border border-[#F1F5F9] rounded-xl p-3">
                   <div className="text-[10px] text-slate-400 uppercase font-bold mb-0.5">Calculated Penalty</div>
-                  <div className="text-xs font-bold text-purple-700 mono">{formatBps(Number(pending.penalty_bps || 1500))}</div>
+                  <div className="text-xs font-bold text-purple-700 mono">{pending.penalty_bps != null ? formatBps(Number(pending.penalty_bps)) : "—"}</div>
                 </div>
                 <div className="bg-[#F8FAFC] border border-[#F1F5F9] rounded-xl p-3">
                   <div className="text-[10px] text-slate-400 uppercase font-bold mb-0.5">Payout At Risk</div>
-                  <div className="text-xs font-bold text-slate-800 mono">{formatBond(Number(pending.payout_amount || 150000000000000000))}</div>
+                  <div className="text-xs font-bold text-slate-800 mono">{pending.payout_amount != null ? formatBond(String(pending.payout_amount)) : "—"}</div>
                 </div>
               </div>
             </Link>

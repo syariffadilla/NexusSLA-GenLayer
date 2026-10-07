@@ -6,8 +6,6 @@ import { GenLayerLogo } from "@/components/ui/CoreComponents";
 import {
   CONTRACT_ADDRESS,
   GENLAYER_EXPLORER_URL,
-  GENLAYER_NETWORKS,
-  STUDIONET_CONTRACTS,
 } from "@/lib/contract";
 import {
   ArrowRight,
@@ -445,7 +443,7 @@ export default function LandingPage() {
                   </a>
 
                   <a
-                    href={`${GENLAYER_EXPLORER_URL}/contracts/${STUDIONET_CONTRACTS.slaVerifier}`}
+                    href="https://docs.genlayer.com"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-3.5 rounded-2xl bg-white/[0.02] hover:bg-white/[0.06] border border-white/[0.06] flex items-center justify-between gap-3 text-left transition-all no-underline group"
@@ -456,10 +454,10 @@ export default function LandingPage() {
                       </div>
                       <div>
                         <div className="text-xs font-semibold text-white group-hover:text-blue-300 transition-colors">
-                          SLA Verifier Engine
+                          GenLayer Docs &amp; SDK
                         </div>
-                        <div className="text-[11px] font-mono text-slate-400">
-                          {STUDIONET_CONTRACTS.slaVerifier.slice(0, 10)}...{STUDIONET_CONTRACTS.slaVerifier.slice(-6)}
+                        <div className="text-[11px] text-slate-400 font-light">
+                          Intelligent contracts &amp; AI equivalence principles.
                         </div>
                       </div>
                     </div>
@@ -756,14 +754,16 @@ export default function LandingPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06]">
                     <div className="text-[10px] font-mono text-slate-400 uppercase">Collateral Bond Escrow</div>
-                    <div className="text-2xl font-mono font-semibold text-white mt-1">0.85 GEN</div>
-                    <div className="text-xs text-slate-400 mt-1">Locked in contract 0x006a4d...</div>
+                    <div className="text-2xl font-mono font-semibold text-white mt-1">1.00 GEN</div>
+                    <div className="text-xs text-slate-400 mt-1 font-mono truncate">
+                      Locked in {CONTRACT_ADDRESS.slice(0, 10)}...{CONTRACT_ADDRESS.slice(-6)}
+                    </div>
                   </div>
 
                   <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06]">
                     <div className="text-[10px] font-mono text-slate-400 uppercase">Penalty Slashed &amp; Payout</div>
-                    <div className="text-2xl font-mono font-semibold text-purple-300 mt-1">0.15 GEN</div>
-                    <div className="text-xs text-emerald-400 mt-1">Direct native transfer to Client wallet</div>
+                    <div className="text-2xl font-mono font-semibold text-purple-300 mt-1">0.05 - 0.40 GEN</div>
+                    <div className="text-xs text-emerald-400 mt-1">Dynamic on-chain transfer to Client wallet</div>
                   </div>
                 </div>
 

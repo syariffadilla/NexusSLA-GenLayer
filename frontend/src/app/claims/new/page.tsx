@@ -3,7 +3,6 @@
 import React, { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useNexus } from "@/context/NexusContext";
-import { EVIDENCE_DOMAINS } from "@/lib/mock-data";
 import { fileClaim } from "@/lib/contract";
 import {
   ArrowLeft,
@@ -17,7 +16,6 @@ import {
   Cpu,
   Scale,
   Sparkles,
-  ExternalLink,
 } from "lucide-react";
 
 const ADJUDICATION_STEPS = [
@@ -29,19 +27,17 @@ const ADJUDICATION_STEPS = [
 ];
 
 export default function FileClaimPage() {
-  const { contractState, wallet, demoMode, refreshState } = useNexus();
-  const [urls, setUrls] = useState<string[]>([
-    "https://www.githubstatus.com/api/v2/incidents.json",
-  ]);
+  const { contractState, contractConfig, wallet, refreshState } = useNexus();
+  const [urls, setUrls] = useState<string[]>([""]);
   const [submitting, setSubmitting] = useState(false);
   const [activeStep, setActiveStep] = useState(0);
   const [submitted, setSubmitted] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Domain whitelist
+  // Domain whitelist comes directly from live contract get_config()
   const registeredDomains = useMemo(() => {
-    return EVIDENCE_DOMAINS;
-  }, []);
+    return contractConfig?.evidence_domains ?? [];
+  }, [contractConfig]);
 
   const addUrl = () => setUrls([...urls, ""]);
   const removeUrl = (idx: number) => setUrls(urls.filter((_, i) => i !== idx));
@@ -110,14 +106,10 @@ export default function FileClaimPage() {
       await new Promise((r) => setTimeout(r, 900));
       setActiveStep(3);
 
-      if (!demoMode) {
-        if (!wallet.connected || !wallet.address) {
-          throw new Error("Wallet not connected. Connect client wallet first.");
-        }
-        await fileClaim(wallet.address, urls.filter(Boolean));
-      } else {
-        await new Promise((r) => setTimeout(r, 1000));
+      if (!wallet.connected || !wallet.address) {
+        throw new Error("Wallet not connected. Connect client wallet first.");
       }
+      await fileClaim(wallet.address, urls.filter(Boolean));
 
       setActiveStep(4);
       await new Promise((r) => setTimeout(r, 800));
@@ -125,10 +117,7 @@ export default function FileClaimPage() {
       setActiveStep(5);
       await new Promise((r) => setTimeout(r, 700));
 
-      if (!demoMode) {
-        await refreshState();
-      }
-
+      await refreshState();
       setSubmitted(true);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Failed to adjudicate claim");
@@ -414,12 +403,6 @@ export default function FileClaimPage() {
           <Send size={16} />
           Submit Claim for Adjudication
         </button>
-
-        {demoMode && (
-          <p className="text-xs text-center mt-3" style={{ color: "var(--text-muted)" }}>
-            Demo mode active — AI adjudication pipeline will be visualized
-          </p>
-        )}
       </div>
     </div>
   );

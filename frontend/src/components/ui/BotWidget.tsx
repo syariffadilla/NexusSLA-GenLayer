@@ -2,6 +2,8 @@
 
 import React, { useState } from "react";
 import { Send, X } from "lucide-react";
+import { CONTRACT_ADDRESS } from "@/lib/contract";
+import { truncateAddress } from "@/lib/formatters";
 
 export function BotWidget() {
   const [open, setOpen] = useState(false);
@@ -24,7 +26,7 @@ export function BotWidget() {
         ...prev,
         {
           sender: "bot",
-          text: `NexusSLA contracts are running on GenLayer Studio (0x006a...3519). All uptime claims are autonomously adjudicated by multi-source AI consensus!`,
+          text: `NexusSLA contracts are running on GenLayer Studio (${truncateAddress(CONTRACT_ADDRESS)}). All uptime claims are autonomously adjudicated by multi-source AI consensus!`,
         },
       ]);
     }, 600);

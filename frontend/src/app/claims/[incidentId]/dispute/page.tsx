@@ -4,7 +4,6 @@ import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useNexus } from "@/context/NexusContext";
-import { EVIDENCE_DOMAINS } from "@/lib/mock-data";
 import { disputeClaim } from "@/lib/contract";
 import { formatBps, formatBond } from "@/lib/formatters";
 import {
@@ -22,31 +21,29 @@ import {
 export default function DisputeClaimPage() {
   const params = useParams();
   const router = useRouter();
-  const incidentId = (params.incidentId as string) || "INC-003";
-  const { contractState, wallet, demoMode, refreshState } = useNexus();
+  const incidentId = (params.incidentId as string) || "";
+  const { contractState, contractConfig, wallet, refreshState } = useNexus();
 
   const [urls, setUrls] = useState<string[]>([""]);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Registered domains
+  // Registered domains come strictly from live get_config()
   const registeredDomains = useMemo(() => {
-    return EVIDENCE_DOMAINS;
-  }, []);
+    return contractConfig?.evidence_domains ?? [];
+  }, [contractConfig]);
 
-  // Get active claim details
-  const pending = contractState?.pending_claim;
-  const isTargetClaim = pending && ("incident_id" in pending) && pending.incident_id === incidentId;
+  // Get active claim details from live contract state
+  const pending = contractState?.pending_claim as Record<string, unknown> | undefined;
+  const isTargetClaim =
+    pending &&
+    Boolean(pending.incident_id) &&
+    String(pending.incident_id).toLowerCase() === incidentId.toLowerCase();
+
   const claimData = isTargetClaim
     ? pending
-    : {
-        incident_id: incidentId,
-        impact: "major",
-        penalty_bps: 1500,
-        payout_amount: 150000000000000000,
-        sources_agreeing: 2,
-      };
+    : contractState?.history?.find((c) => c.incident_id === incidentId) ?? null;
 
   const addUrl = () => setUrls([...urls, ""]);
   const removeUrl = (idx: number) => setUrls(urls.filter((_, i) => i !== idx));
@@ -107,18 +104,12 @@ export default function DisputeClaimPage() {
     setErrorMsg(null);
 
     try {
-      if (demoMode) {
-        // Simulate dispute transaction
-        await new Promise((r) => setTimeout(r, 2000));
-        setSubmitted(true);
-      } else {
-        if (!wallet.connected || !wallet.address) {
-          throw new Error("Wallet not connected. Connect provider wallet first.");
-        }
-        await disputeClaim(wallet.address, urls.filter(Boolean));
-        await refreshState();
-        setSubmitted(true);
+      if (!wallet.connected || !wallet.address) {
+        throw new Error("Wallet not connected. Connect provider wallet first.");
       }
+      await disputeClaim(wallet.address, urls.filter(Boolean));
+      await refreshState();
+      setSubmitted(true);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Failed to submit dispute");
     } finally {
@@ -220,7 +211,9 @@ export default function DisputeClaimPage() {
                   border: "1px solid rgba(239, 68, 68, 0.2)",
                 }}
               >
-                {"impact" in claimData ? String(claimData.impact) : "MAJOR"}
+                {claimData && "impact" in claimData && claimData.impact
+                  ? String(claimData.impact)
+                  : "NOT SPECIFIED"}
               </span>
             </div>
             <div>
@@ -228,7 +221,9 @@ export default function DisputeClaimPage() {
                 Calculated Penalty
               </div>
               <span className="mono font-semibold" style={{ color: "var(--accent-secondary)" }}>
-                {"penalty_bps" in claimData ? formatBps(Number(claimData.penalty_bps)) : "1,500 bps"}
+                {claimData && "penalty_bps" in claimData && claimData.penalty_bps != null
+                  ? formatBps(Number(claimData.penalty_bps))
+                  : "—"}
               </span>
             </div>
             <div>
@@ -236,9 +231,9 @@ export default function DisputeClaimPage() {
                 Collateral at Risk
               </div>
               <span className="mono font-semibold" style={{ color: "var(--text-primary)" }}>
-                {"payout_amount" in claimData
-                  ? formatBond(Number(claimData.payout_amount))
-                  : "0.15 GEN"}
+                {claimData && "payout_amount" in claimData && claimData.payout_amount != null
+                  ? formatBond(String(claimData.payout_amount))
+                  : "—"}
               </span>
             </div>
           </div>
@@ -385,12 +380,6 @@ export default function DisputeClaimPage() {
             </>
           )}
         </button>
-
-        {demoMode && (
-          <p className="text-xs text-center mt-3" style={{ color: "var(--text-muted)" }}>
-            Demo mode active — dispute submission will be simulated on mock state
-          </p>
-        )}
       </div>
     </div>
   );

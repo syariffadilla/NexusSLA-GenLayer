@@ -18,29 +18,25 @@ import {
 import type { ClaimHistoryEntry } from "@/types/nexus-sla";
 
 export default function ClaimsPage() {
-  const { contractState, loading, wallet, demoMode, refreshState } = useNexus();
+  const { contractState, loading, wallet, refreshState } = useNexus();
   const [finalizing, setFinalizing] = useState(false);
   const [finalizeSuccess, setFinalizeSuccess] = useState(false);
 
   const history = contractState?.history || [];
   const pendingClaim = contractState?.pending_claim as Record<string, unknown> | undefined;
   const hasPending = pendingClaim && Object.keys(pendingClaim).length > 0;
-  const incidentId = hasPending ? String(pendingClaim.incident_id || "INC-003") : "";
+  const incidentId = hasPending ? String(pendingClaim.incident_id || "pending-claim") : "";
 
   const handleFinalize = async () => {
+    if (!wallet.connected || !wallet.address) {
+      alert("Please connect wallet first");
+      return;
+    }
     setFinalizing(true);
     try {
-      if (demoMode) {
-        await new Promise((r) => setTimeout(r, 1200));
-        setFinalizeSuccess(true);
-      } else {
-        if (!wallet.connected || !wallet.address) {
-          throw new Error("Wallet not connected");
-        }
-        await finalizeClaim(wallet.address);
-        await refreshState();
-        setFinalizeSuccess(true);
-      }
+      await finalizeClaim(wallet.address);
+      await refreshState();
+      setFinalizeSuccess(true);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Finalize failed");
     } finally {
@@ -153,7 +149,7 @@ export default function ClaimsPage() {
               </div>
               <span className="mono" style={{ color: "var(--text-primary)" }}>
                 {pendingClaim.payout_amount != null
-                  ? formatBond(Number(pendingClaim.payout_amount))
+                  ? formatBond(String(pendingClaim.payout_amount))
                   : "—"}
               </span>
             </div>

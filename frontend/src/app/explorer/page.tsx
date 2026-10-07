@@ -8,7 +8,6 @@ import { formatBond, formatBps, getClaimStatus } from "@/lib/formatters";
 import {
   CONTRACT_ADDRESS,
   GENLAYER_EXPLORER_URL,
-  STUDIONET_CONTRACTS,
 } from "@/lib/contract";
 import {
   ExternalLink,
@@ -35,8 +34,6 @@ export default function ExplorerPage() {
   const {
     contractState,
     loading,
-    demoMode,
-    setDemoMode,
     rpcUrl,
     setRpcUrl,
     rpcStatus,
@@ -58,38 +55,32 @@ export default function ExplorerPage() {
     {
       name: "NexusSLA Autonomous Court",
       address: CONTRACT_ADDRESS,
-      role: "Core Arbitration Engine & Escrow",
-      status: "Active",
+      role: "Core Intelligent Contract & Escrow Engine",
+      status: contractState?.state ?? "Active",
       verified: true,
     },
-    {
-      name: "SLA Verifier Consensus",
-      address: STUDIONET_CONTRACTS.slaVerifier,
-      role: "Equivalence Principle Validator Aggregator",
-      status: "Active",
-      verified: true,
-    },
-    {
-      name: "Uptime Monitor Feeds",
-      address: STUDIONET_CONTRACTS.uptimeMonitor,
-      role: "Non-Deterministic Multi-Domain Web Scraper",
-      status: "Active",
-      verified: true,
-    },
-    {
-      name: "Matter Labs API Agreement",
-      address: STUDIONET_CONTRACTS.sla001,
-      role: "RPC Reliability SLA (99.90% Target)",
-      status: "Active",
-      verified: true,
-    },
-    {
-      name: "GenLayer Foundation Agreement",
-      address: STUDIONET_CONTRACTS.sla002,
-      role: "Studionet Core Infrastructure SLA",
-      status: "Active",
-      verified: true,
-    },
+    ...(contractState?.provider
+      ? [
+          {
+            name: "SLA Provider Escrow Account",
+            address: contractState.provider,
+            role: "Designated Service Operator & Bond Depositor",
+            status: "Active",
+            verified: true,
+          },
+        ]
+      : []),
+    ...(contractState?.client
+      ? [
+          {
+            name: "SLA Client Enterprise Account",
+            address: contractState.client,
+            role: "Protected Enterprise Beneficiary",
+            status: "Active",
+            verified: true,
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -123,17 +114,10 @@ export default function ExplorerPage() {
             <span>GitHub Boilerplate</span>
             <ArrowUpRight size={12} className="text-slate-400" />
           </a>
-          <button
-            onClick={() => setDemoMode(!demoMode)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer border flex items-center gap-1.5 ${
-              demoMode
-                ? "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
-                : "bg-slate-900 text-white border-slate-900 hover:bg-slate-800 shadow-xs"
-            }`}
-          >
-            <Zap size={12} />
-            <span>Mode: {demoMode ? "Simulator (Offline Demo)" : "Live Studionet RPC"}</span>
-          </button>
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span>GenLayer Studionet (Live)</span>
+          </div>
         </div>
       </div>
 
@@ -235,7 +219,7 @@ export default function ExplorerPage() {
             </h3>
           </div>
           <span className="text-[10px] font-mono uppercase text-slate-400">
-            5 Contracts Deployed
+            {ecosystemContracts.length} On-Chain Records
           </span>
         </div>
 

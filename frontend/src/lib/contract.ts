@@ -1,251 +1,209 @@
 // --- Contract Integration Layer ----------------------------------------------
-// Connects to the deployed NexusSLA contract on GenLayer Studio.
-// Uses JSON-RPC calls to interact with the GenLayer node.
+// Single source of truth for talking to the deployed NexusSLA contract.
+//
+// * Contract address: ONLY from NEXT_PUBLIC_CONTRACT_ADDRESS (see .env.local /
+//   .env.example). There is deliberately no hardcoded fallback address — if the
+//   env var is missing the UI shows "Not configured" instead of silently
+//   reading some other deployment.
+// * Reads go through genlayer-js `readContract` (gen_call). The previous
+//   hand-rolled JSON-RPC `call` method does not exist on GenLayer nodes
+//   ("Method not found: call"), which is why the old UI silently fell back to
+//   mock data.
+// * Wei-denominated fields are kept as decimal strings so values like
+//   remaining_bond never lose precision through JS Number.
 
-import type { ContractGetState } from "@/types/nexus-sla";
+import { createClient } from "genlayer-js";
+import { studionet } from "genlayer-js/chains";
+import { TransactionStatus } from "genlayer-js/types";
+import type { ContractConfig, ContractGetState } from "@/types/nexus-sla";
 
-export const CONTRACT_ADDRESS = "0x006a4d15EC51F5cb1F7721A291429181db8D3519";
+const RAW_CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS ?? "").trim();
+const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+
+/** Configured contract address, or "" when NEXT_PUBLIC_CONTRACT_ADDRESS is missing/invalid. */
+export const CONTRACT_ADDRESS: string = ADDRESS_RE.test(RAW_CONTRACT_ADDRESS)
+  ? RAW_CONTRACT_ADDRESS
+  : "";
+
+export const CONTRACT_CONFIG_ERROR: string | null = CONTRACT_ADDRESS
+  ? null
+  : RAW_CONTRACT_ADDRESS
+  ? `NEXT_PUBLIC_CONTRACT_ADDRESS is not a valid address: "${RAW_CONTRACT_ADDRESS}"`
+  : "NEXT_PUBLIC_CONTRACT_ADDRESS is not set. Add it to frontend/.env.local and restart the dev server.";
+
 export const GENLAYER_EXPLORER_URL = "https://explorer-studio.genlayer.com";
 
-// Fixed Official GenLayer Chain Configurations
-export const GENLAYER_NETWORKS = {
-  studionet: {
-    name: "GenLayer Studionet",
-    rpcUrl: "https://studio.genlayer.com/api",
-    localRpcUrl: "http://localhost:4000/api",
-    explorerUrl: "https://explorer-studio.genlayer.com",
-    nativeCurrency: { name: "GenLayer Token", symbol: "GEN", decimals: 18 },
-  },
-  asimov: {
-    name: "GenLayer Asimov Testnet",
-    rpcUrl: "https://asimov.genlayer.com/api",
-    explorerUrl: "https://explorer-asimov.genlayer.com",
-    nativeCurrency: { name: "GenLayer Token", symbol: "GEN", decimals: 18 },
-  },
-  bradbury: {
-    name: "GenLayer Bradbury Testnet",
-    rpcUrl: "https://bradbury.genlayer.com/api",
-    explorerUrl: "https://explorer-bradbury.genlayer.com",
-    nativeCurrency: { name: "GenLayer Token", symbol: "GEN", decimals: 18 },
-  },
-} as const;
+const DEFAULT_RPC_URL =
+  (process.env.NEXT_PUBLIC_GENLAYER_RPC_URL ?? "").trim() || studionet.rpcUrls.default.http[0];
 
-// Deployed Ecosystem Contracts on Studionet (referenced in uptime-rouge.vercel.app/sla-integration)
-export const STUDIONET_CONTRACTS = {
-  nexusSla: "0x006a4d15EC51F5cb1F7721A291429181db8D3519",
-  slaVerifier: "0x8D926888B6781d9C987dB89693E771D702366D85",
-  uptimeMonitor: "0x1AE5Eb9a7A1ece2E873689e0ED33b818dd2f2573",
-  sla001: "0x2A3139E97262F25DFd0B039D55cdD99c1C192B36", // Matter Labs (ZKSync bridge)
-  sla002: "0x90287aec8e7028EF57Ad58fb9060a7Bdb3D5d548", // GenLayer Foundation -> GenLayer Labs
-} as const;
-
-export let GENLAYER_RPC_URL =
-  process.env.NEXT_PUBLIC_GENLAYER_RPC_URL || "https://studio.genlayer.com/api";
+// In-memory override only (not persisted), so a reload always returns to the
+// env-configured endpoint.
+export let GENLAYER_RPC_URL = DEFAULT_RPC_URL;
 
 export function setCustomRpcUrl(url: string) {
-  if (url && url.trim()) {
-    const trimmed = url.trim();
-    try {
-      const parsed = new URL(trimmed);
-      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-        GENLAYER_RPC_URL = trimmed;
-      }
-    } catch {
-      // Ignore malformed URL
-    }
+  const trimmed = (url || "").trim();
+  if (!trimmed) {
+    GENLAYER_RPC_URL = DEFAULT_RPC_URL;
+    return;
   }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      GENLAYER_RPC_URL = trimmed;
+    }
+  } catch {
+    // Ignore malformed URL
+  }
+}
+
+function requireAddress(): `0x${string}` {
+  if (!CONTRACT_ADDRESS) throw new Error(CONTRACT_CONFIG_ERROR ?? "Contract address not configured");
+  return CONTRACT_ADDRESS as `0x${string}`;
+}
+
+function readClient(endpoint = GENLAYER_RPC_URL) {
+  return createClient({ chain: studionet, endpoint });
+}
+
+async function readView(functionName: string, endpoint?: string): Promise<string> {
+  const raw = await readClient(endpoint).readContract({
+    address: requireAddress(),
+    functionName,
+    args: [],
+  });
+  if (typeof raw !== "string") {
+    throw new Error(`${functionName}() returned ${typeof raw}, expected a JSON string`);
+  }
+  return raw;
+}
+
+// Quote wei integers before JSON.parse so they survive as exact strings.
+const WEI_FIELDS_RE = /"(remaining_bond|payout_amount|bond_amount)"\s*:\s*(-?\d+)/g;
+function parsePreservingWei<T>(raw: string): T {
+  return JSON.parse(raw.replace(WEI_FIELDS_RE, '"$1":"$2"')) as T;
+}
+
+export interface ContractRead<T> {
+  data: T;
+  /** Exact string returned by the contract view method. */
+  raw: string;
+  fetchedAt: number;
+}
+
+// --- Contract Read Methods ---------------------------------------------------
+
+export async function getContractState(): Promise<ContractRead<ContractGetState>> {
+  const raw = await readView("get_state");
+  return { data: parsePreservingWei<ContractGetState>(raw), raw, fetchedAt: Date.now() };
+}
+
+export async function getContractConfig(): Promise<ContractRead<ContractConfig>> {
+  const raw = await readView("get_config");
+  return { data: parsePreservingWei<ContractConfig>(raw), raw, fetchedAt: Date.now() };
 }
 
 export async function testRpcConnection(targetUrl?: string): Promise<{
   success: boolean;
   latencyMs?: number;
   error?: string;
-  isGenLayer?: boolean;
 }> {
-  const url = targetUrl || GENLAYER_RPC_URL;
+  const url = (targetUrl || GENLAYER_RPC_URL).trim();
   if (!url.startsWith("http://") && !url.startsWith("https://")) {
-    return {
-      success: false,
-      error: "Invalid protocol. Only http:// and https:// endpoints are permitted.",
-    };
+    return { success: false, error: "Invalid protocol. Only http:// and https:// endpoints are permitted." };
   }
   const start = Date.now();
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 4000);
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        method: "call",
-        params: [
-          {
-            to: CONTRACT_ADDRESS,
-            data: { method: "get_state", args: [] },
-          },
-        ],
-        id: Date.now(),
-      }),
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
-
-    const latencyMs = Date.now() - start;
-    if (!response.ok) {
-      return { success: false, error: `HTTP ${response.status}: ${response.statusText}`, latencyMs };
-    }
-    const data = await response.json();
-    if (data.error) {
-      return { success: false, error: data.error.message || "RPC returned error", latencyMs };
-    }
-    return { success: true, latencyMs, isGenLayer: true };
+    await readView("get_state", url);
+    return { success: true, latencyMs: Date.now() - start };
   } catch (err: unknown) {
-    const latencyMs = Date.now() - start;
-    const msg = err instanceof Error ? err.message : "Connection failed";
-    return { success: false, error: msg, latencyMs };
-  }
-}
-
-/**
- * Call a read method on the deployed contract via GenLayer JSON-RPC.
- */
-async function callReadMethod<T>(
-  method: string,
-  args: unknown[] = [],
-): Promise<T> {
-  const response = await fetch(GENLAYER_RPC_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      method: "call",
-      params: [
-        {
-          to: CONTRACT_ADDRESS,
-          data: { method, args },
-        },
-      ],
-      id: Date.now(),
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`RPC request failed: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  if (data.error) {
-    throw new Error(data.error.message || "Contract call failed");
-  }
-
-  return data.result as T;
-}
-
-/**
- * Call a write method on the deployed contract via GenLayer JSON-RPC.
- */
-async function callWriteMethod(
-  method: string,
-  args: unknown[] = [],
-  value: number = 0,
-  fromAddress?: string,
-): Promise<string> {
-  const params: Record<string, unknown> = {
-    to: CONTRACT_ADDRESS,
-    data: { method, args },
-  };
-
-  if (value > 0) {
-    params.value = value;
-  }
-  if (fromAddress) {
-    params.from = fromAddress;
-  }
-
-  const response = await fetch(GENLAYER_RPC_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      method: "send_transaction",
-      params: [params],
-      id: Date.now(),
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`RPC request failed: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  if (data.error) {
-    throw new Error(data.error.message || "Transaction failed");
-  }
-
-  return data.result as string;
-}
-
-// --- Contract Read Methods ---------------------------------------------------
-
-export async function getContractState(): Promise<ContractGetState> {
-  const raw = await callReadMethod<string>("get_state");
-  return JSON.parse(raw);
-}
-
-export interface ContractConfig {
-  bond_amount: number;
-  start: number;
-  end: number;
-  evidence_domains: string[];
-  tier_uptime_thresholds_bps: number[];
-  tier_penalty_bps: number[];
-}
-
-export async function getContractConfig(): Promise<ContractConfig | null> {
-  try {
-    const raw = await callReadMethod<string>("get_config");
-    return JSON.parse(raw);
-  } catch {
-    return null;
+    return {
+      success: false,
+      latencyMs: Date.now() - start,
+      error: err instanceof Error ? err.message : "Connection failed",
+    };
   }
 }
 
 // --- Contract Write Methods --------------------------------------------------
+// Writes must be signed by a real injected wallet (MetaMask / Rabby). Address-
+// only sessions (role shortcuts, pasted addresses) are read-only and cannot
+// sign — we surface that as an error instead of pretending it succeeded.
 
-export async function depositBond(fromAddress: string, bondAmountWei: number): Promise<string> {
-  return callWriteMethod("deposit_bond", [], bondAmountWei, fromAddress);
+type Eip1193Provider = {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+};
+
+function getInjectedProvider(): Eip1193Provider | null {
+  if (typeof window === "undefined") return null;
+  return (window as unknown as { ethereum?: Eip1193Provider }).ethereum ?? null;
 }
 
-export async function fileClaim(
+export interface WriteResult {
+  hash: string;
+  status: string;
+  executionResult: string;
+}
+
+async function callWriteMethod(
   fromAddress: string,
-  evidenceUrls: string[],
-): Promise<string> {
-  return callWriteMethod(
-    "file_claim",
-    [JSON.stringify(evidenceUrls)],
-    0,
-    fromAddress,
-  );
+  functionName: string,
+  args: string[] = [],
+  value: bigint = BigInt(0),
+): Promise<WriteResult> {
+  const address = requireAddress();
+  const provider = getInjectedProvider();
+  if (!provider) {
+    throw new Error(
+      "No browser wallet detected. Transactions must be signed by MetaMask/Rabby; address-only sessions are read-only.",
+    );
+  }
+  const accounts = ((await provider.request({ method: "eth_accounts" })) as string[]) || [];
+  if (!accounts.some((a) => a.toLowerCase() === fromAddress.toLowerCase())) {
+    throw new Error(
+      `Session address ${fromAddress} is not unlocked in your browser wallet. Read-only sessions cannot sign transactions.`,
+    );
+  }
+
+  const client = createClient({
+    chain: studionet,
+    endpoint: GENLAYER_RPC_URL,
+    account: fromAddress as `0x${string}`,
+    provider: provider as never,
+  });
+
+  const hash = await client.writeContract({ address, functionName, args, value });
+  const receipt = await client.waitForTransactionReceipt({
+    hash,
+    status: TransactionStatus.ACCEPTED,
+    interval: 5000,
+    retries: 120,
+  });
+
+  const executionResult = String(receipt.txExecutionResultName ?? "UNKNOWN");
+  const status = String(receipt.statusName ?? receipt.status ?? "UNKNOWN");
+  if (executionResult === "FINISHED_WITH_ERROR") {
+    throw new Error(`Transaction ${hash} was accepted but the contract call reverted (FINISHED_WITH_ERROR).`);
+  }
+  return { hash: String(hash), status, executionResult };
 }
 
-export async function disputeClaim(
-  fromAddress: string,
-  evidenceUrls: string[],
-): Promise<string> {
-  return callWriteMethod(
-    "dispute_claim",
-    [JSON.stringify(evidenceUrls)],
-    0,
-    fromAddress,
-  );
+/** bondAmountWei must be the exact get_config().bond_amount (contract asserts equality). */
+export async function depositBond(fromAddress: string, bondAmountWei: string): Promise<WriteResult> {
+  return callWriteMethod(fromAddress, "deposit_bond", [], BigInt(bondAmountWei));
 }
 
-export async function finalizeClaim(fromAddress: string): Promise<string> {
-  return callWriteMethod("finalize_claim", [], 0, fromAddress);
+export async function fileClaim(fromAddress: string, evidenceUrls: string[]): Promise<WriteResult> {
+  return callWriteMethod(fromAddress, "file_claim", [JSON.stringify(evidenceUrls)]);
 }
 
-export async function withdrawRemainingBond(fromAddress: string): Promise<string> {
-  return callWriteMethod("withdraw_remaining_bond", [], 0, fromAddress);
+export async function disputeClaim(fromAddress: string, evidenceUrls: string[]): Promise<WriteResult> {
+  return callWriteMethod(fromAddress, "dispute_claim", [JSON.stringify(evidenceUrls)]);
+}
+
+export async function finalizeClaim(fromAddress: string): Promise<WriteResult> {
+  return callWriteMethod(fromAddress, "finalize_claim");
+}
+
+export async function withdrawRemainingBond(fromAddress: string): Promise<WriteResult> {
+  return callWriteMethod(fromAddress, "withdraw_remaining_bond");
 }
