@@ -66,6 +66,7 @@ export default function CourtCaseDetail() {
       disputed: Boolean(pending.disputed),
       finalized: Boolean(pending.finalized),
       filed_at: pending.filed_at ? Number(pending.filed_at) : undefined,
+      dispute_deadline: pending.dispute_deadline ? Number(pending.dispute_deadline) : undefined,
       duration_minutes: pending.duration_minutes ? Number(pending.duration_minutes) : undefined,
       evidence_provided: Array.isArray(pending.evidence_provided)
         ? (pending.evidence_provided as string[])
@@ -118,6 +119,9 @@ export default function CourtCaseDetail() {
   }
 
   const isPending = !claim.finalized;
+  const nowUnix = Math.floor(Date.now() / 1000);
+  const disputeDeadline = (claim as any)?.dispute_deadline || 0;
+  const disputeActive = !claim?.disputed && disputeDeadline > 0 && nowUnix < disputeDeadline;
 
   return (
     <div className="container-nexus py-10">
@@ -161,7 +165,9 @@ export default function CourtCaseDetail() {
                 <p className="text-xs text-[var(--text-secondary)]">
                   {claim.disputed
                     ? "The provider has submitted counter-evidence. GenLayer AI validators are reviewing consensus."
-                    : "The dispute window is open. Provider may dispute with counter-evidence or claim can be finalized."}
+                    : disputeActive
+                    ? "The dispute window is open. Provider may dispute before settlement unlocks."
+                    : "The dispute window has concluded. Settlement is ready to be finalized."}
                 </p>
               </div>
             </div>
@@ -178,8 +184,9 @@ export default function CourtCaseDetail() {
               )}
               <button
                 onClick={handleFinalize}
-                disabled={finalizing}
+                disabled={finalizing || disputeActive}
                 className="btn-primary text-xs"
+                title={disputeActive ? "Finalize is locked during active dispute window" : undefined}
               >
                 {finalizing ? (
                   <>

@@ -51,11 +51,14 @@ export function DashboardPortal() {
   const isProvider = userRole === "Provider";
   const isClient = userRole === "Client";
   const pendingDisputed = hasPending && Boolean(pending.disputed);
+  const disputeDeadline = hasPending ? Number(pending.dispute_deadline || 0) : 0;
+  const nowUnix = Math.floor(Date.now() / 1000);
+  const disputeWindowActive = hasPending && !pendingDisputed && disputeDeadline > 0 && nowUnix < disputeDeadline;
 
   const needActionCount = hasPending
     ? isProvider && !pendingDisputed
       ? 1
-      : isClient
+      : isClient && !disputeWindowActive
       ? 1
       : 0
     : 0;
@@ -63,6 +66,8 @@ export function DashboardPortal() {
   const actionText = hasPending
     ? isProvider && !pendingDisputed
       ? "Provider can counter-dispute"
+      : disputeWindowActive
+      ? "Dispute window active (provider review)"
       : isClient
       ? "Client can finalize payout"
       : "Observer monitoring"
@@ -569,7 +574,11 @@ export function DashboardPortal() {
                     <div className="p-2.5 sm:p-3 bg-amber-50/80 border border-amber-200 rounded-xl mb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                       <div className="flex items-center gap-1.5 text-amber-900 font-medium text-[11px] sm:text-xs">
                         <AlertTriangle size={14} className="text-amber-600 flex-shrink-0" />
-                        <span>Dispute window active. Provider can counter-dispute or client can finalize.</span>
+                        <span>
+                          {disputeWindowActive
+                            ? "Dispute window active. Provider can counter-dispute before settlement unlocks."
+                            : "Dispute window concluded. Settlement ready to be finalized."}
+                        </span>
                       </div>
 
                       <div className="flex items-center gap-1.5 self-start sm:self-auto flex-wrap">
@@ -582,8 +591,9 @@ export function DashboardPortal() {
                         </Link>
                         <button
                           onClick={handleFinalize}
-                          disabled={finalizing || finalizeSuccess}
+                          disabled={finalizing || finalizeSuccess || disputeWindowActive}
                           className="btn-portal-primary text-xs"
+                          title={disputeWindowActive ? "Finalize is locked during active dispute window" : undefined}
                         >
                           {finalizing ? (
                             <>

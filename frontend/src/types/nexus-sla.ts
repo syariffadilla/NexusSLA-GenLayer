@@ -19,6 +19,9 @@ export type ImpactLevel = "major" | "minor" | "none";
 export interface PendingClaim {
   incident_id: string;
   filed_at: number;
+  dispute_deadline?: number;
+  incident_start?: number;
+  incident_end?: number;
   impact: ImpactLevel;
   duration_minutes: number;
   penalty_bps: number;
@@ -62,6 +65,7 @@ export interface ContractConfig {
   bond_amount: string;
   start: number;
   end: number;
+  dispute_period_seconds?: number;
   evidence_domains: string[];
   tier_uptime_thresholds_bps: number[];
   tier_penalty_bps: number[];
