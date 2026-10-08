@@ -28,6 +28,7 @@ export interface PendingClaim {
   /** wei, exact decimal string */
   payout_amount: string;
   sources_agreeing: number;
+  client_stake_held?: string | number;
   disputed: boolean;
   finalized: boolean;
 }
@@ -49,6 +50,7 @@ export interface ClaimHistoryEntry {
   status?: string;
   reason?: string;
   evidence_provided?: string[];
+  stake_slashed?: string | number;
 }
 
 export interface ContractGetState {
@@ -57,6 +59,8 @@ export interface ContractGetState {
   client: string;
   /** wei, exact decimal string */
   remaining_bond: string;
+  /** wei, exact decimal string */
+  claim_stake_amount?: string;
   quorum_required: number;
   pending_claim: PendingClaim | Record<string, never>;
   history: ClaimHistoryEntry[];
@@ -66,6 +70,8 @@ export interface ContractGetState {
 export interface ContractConfig {
   /** wei, exact decimal string */
   bond_amount: string;
+  /** wei, exact decimal string */
+  claim_stake_amount?: string;
   start: number;
   end: number;
   dispute_period_seconds?: number;
