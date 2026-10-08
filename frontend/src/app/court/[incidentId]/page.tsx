@@ -120,8 +120,8 @@ export default function CourtCaseDetail() {
 
   const isPending = !claim.finalized;
   const nowUnix = Math.floor(Date.now() / 1000);
-  const disputeDeadline = (claim as any)?.dispute_deadline || 0;
-  const disputeActive = !claim?.disputed && disputeDeadline > 0 && nowUnix < disputeDeadline;
+  const disputeDeadline = claim.dispute_deadline || 0;
+  const disputeActive = !claim.disputed && disputeDeadline > 0 && nowUnix < disputeDeadline;
 
   return (
     <div className="container-nexus py-10">

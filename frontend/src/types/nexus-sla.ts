@@ -35,6 +35,9 @@ export interface PendingClaim {
 export interface ClaimHistoryEntry {
   incident_id?: string;
   filed_at?: number;
+  dispute_deadline?: number;
+  incident_start?: number;
+  incident_end?: number;
   impact?: ImpactLevel;
   duration_minutes?: number;
   penalty_bps?: number;
