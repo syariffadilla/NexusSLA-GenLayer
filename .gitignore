@@ -75,3 +75,11 @@ chat_history*
 **/promnt.md
 **/prompt*.md
 
+# Local Test Runners & Scratch Files
+tests/
+test_harness.py
+run_contract_tests.py
+*.metadata.json
+scratch/
+.pytest_cache/
+
