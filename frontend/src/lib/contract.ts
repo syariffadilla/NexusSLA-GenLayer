@@ -438,6 +438,7 @@ export interface DeploySlaParams {
   bondAmountWei: string;
   tierUptimeThresholdsBps: Record<string, number>;
   tierPenaltyBps: Record<string, number>;
+  disputePeriodSeconds?: number;
   onStep?: (step: string) => void;
 }
 
@@ -469,6 +470,7 @@ export async function deploySlaContract(params: DeploySlaParams): Promise<Deploy
     BigInt(params.bondAmountWei),
     JSON.stringify(params.tierUptimeThresholdsBps),
     JSON.stringify(params.tierPenaltyBps),
+    params.disputePeriodSeconds ?? 86400,
   ];
 
   params.onStep?.("1/3: Please confirm transaction in Rabby / MetaMask...");
