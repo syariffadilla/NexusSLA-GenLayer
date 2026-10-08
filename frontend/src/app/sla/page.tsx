@@ -193,7 +193,7 @@ export default function SLAPage() {
                 <div className="flex items-center gap-2.5">
                   <Coins size={18} className="text-purple-600 flex-shrink-0" />
                   <div>
-                    <span className="font-bold">Provider Collateral Deposit Required:</span> Agreement is currently in <span className="font-mono font-semibold">UNINITIALIZED</span> state. Provider must deposit {contractConfig?.bond_amount ? formatBond(contractConfig.bond_amount) : "1.00 GEN"} to activate the contract.
+                    <span className="font-bold">Provider Collateral Deposit Required:</span> Agreement is currently in <span className="font-mono font-semibold">UNINITIALIZED</span> state. Provider must deposit {contractConfig?.bond_amount ? formatBond(contractConfig.bond_amount) : "the required bond"} to activate the contract.
                   </div>
                 </div>
                 <Link

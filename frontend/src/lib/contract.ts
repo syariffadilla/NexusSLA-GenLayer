@@ -392,7 +392,6 @@ async function callWriteMethod(
   if (
     executionResult === "FINISHED_WITH_ERROR" ||
     executionResult === "2" ||
-    rawTx.resultName === "DISAGREE" ||
     rawTx.resultName === "MAJORITY_DISAGREE" ||
     rawTx.consensus_data?.leader_receipt?.[0]?.execution_result === 2
   ) {

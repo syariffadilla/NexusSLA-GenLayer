@@ -368,7 +368,7 @@ export default function FileClaimPage() {
                   Agreement Not Active ({contractState?.state || "UNINITIALIZED"})
                 </span>
                 <span>
-                  The designated Provider must deposit collateral bond ({contractConfig ? formatBond(contractConfig.bond_amount) : "2.00 GEN"}) before any outage claims can be filed.
+                  The designated Provider must deposit collateral bond ({contractConfig?.bond_amount ? formatBond(contractConfig.bond_amount) : "contract bond"}) before any outage claims can be filed.
                 </span>
               </div>
             </div>

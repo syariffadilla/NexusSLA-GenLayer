@@ -262,7 +262,7 @@ export function DashboardPortal() {
                 Action Required: Provider Collateral Deposit Needed
               </p>
               <p className="text-xs text-purple-700 mt-0.5">
-                Agreement is deployed but in <span className="font-mono font-bold">UNINITIALIZED</span> state. Provider ({truncateAddress(contractState.provider)}) must deposit {contractConfig?.bond_amount ? formatBond(contractConfig.bond_amount) : "1.00 GEN"} to activate SLA protection.
+                Agreement is deployed but in <span className="font-mono font-bold">UNINITIALIZED</span> state. Provider ({truncateAddress(contractState.provider)}) must deposit {contractConfig?.bond_amount ? formatBond(contractConfig.bond_amount) : "the required bond"} to activate SLA protection.
               </p>
             </div>
           </div>
