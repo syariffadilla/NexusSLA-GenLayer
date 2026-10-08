@@ -98,7 +98,7 @@ async function readView(functionName: string, endpoint?: string, targetAddress?:
 }
 
 // Quote wei integers before JSON.parse so they survive as exact strings.
-const WEI_FIELDS_RE = /"(remaining_bond|payout_amount|bond_amount)"\s*:\s*(-?\d+)/g;
+const WEI_FIELDS_RE = /"(remaining_bond|payout_amount|bond_amount|claim_stake_amount)"\s*:\s*(-?\d+)/g;
 function parsePreservingWei<T>(raw: string): T {
   return JSON.parse(raw.replace(WEI_FIELDS_RE, '"$1":"$2"')) as T;
 }
@@ -409,8 +409,34 @@ export async function depositBond(fromAddress: string, bondAmountWei: string, co
   return callWriteMethod(fromAddress, "deposit_bond", [], BigInt(bondAmountWei), contractAddress);
 }
 
-export async function fileClaim(fromAddress: string, evidenceUrls: string[], contractAddress?: string): Promise<WriteResult> {
-  return callWriteMethod(fromAddress, "file_claim", [JSON.stringify(evidenceUrls)], BigInt(0), contractAddress);
+export async function fileClaim(
+  fromAddress: string,
+  evidenceUrls: string[],
+  contractAddress?: string,
+  claimStakeWei?: string,
+): Promise<WriteResult> {
+  let stakeValue = BigInt(0);
+  if (claimStakeWei) {
+    stakeValue = BigInt(claimStakeWei);
+  } else {
+    try {
+      const config = await getContractConfig(contractAddress);
+      if (config.data?.claim_stake_amount) {
+        stakeValue = BigInt(config.data.claim_stake_amount);
+      }
+    } catch {
+      // Fallback for legacy contracts without claim_stake_amount
+      stakeValue = BigInt(0);
+    }
+  }
+
+  return callWriteMethod(
+    fromAddress,
+    "file_claim",
+    [JSON.stringify(evidenceUrls)],
+    stakeValue,
+    contractAddress,
+  );
 }
 
 export async function disputeClaim(fromAddress: string, evidenceUrls: string[], contractAddress?: string): Promise<WriteResult> {

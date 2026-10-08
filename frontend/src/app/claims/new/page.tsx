@@ -19,6 +19,7 @@ import {
   Sparkles,
   AlertCircle,
   Coins,
+  ShieldAlert,
 } from "lucide-react";
 
 const ADJUDICATION_STEPS = [
@@ -446,6 +447,28 @@ export default function FileClaimPage() {
             <Plus size={14} />
             Add Evidence Source
           </button>
+        </div>
+
+        {/* v2 Economic Anti-Spam Badge */}
+        <div
+          className="p-4 rounded-xl mb-6 flex items-start gap-3"
+          style={{
+            background: "rgba(99, 102, 241, 0.06)",
+            border: "1px solid rgba(99, 102, 241, 0.2)",
+            fontSize: "13px",
+          }}
+        >
+          <ShieldAlert size={18} className="flex-shrink-0 mt-0.5" style={{ color: "var(--accent-secondary)" }} />
+          <div>
+            <div className="font-semibold text-xs uppercase tracking-wider mb-1" style={{ color: "var(--accent-secondary)" }}>
+              Economic Anti-Spam Protection (v2 Enterprise)
+            </div>
+            <p className="text-xs m-0 leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+              Filing this claim requires a temporary collateral deposit (0.05 GEN).
+              If the incident is verified by the multi-source AI jury, your deposit is <strong>100% refunded</strong> along with the penalty payout.
+              Frivolous or unsubstantiated claims slash the deposit to compensate the provider.
+            </p>
+          </div>
         </div>
 
         {errorMsg && (
